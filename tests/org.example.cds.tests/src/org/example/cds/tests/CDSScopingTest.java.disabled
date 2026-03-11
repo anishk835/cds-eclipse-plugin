@@ -1,0 +1,134 @@
+package org.example.cds.tests;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import org.eclipse.xtext.resource.XtextResourceSet;
+import org.eclipse.xtext.testing.InjectWith;
+import org.eclipse.xtext.testing.extensions.InjectionExtension;
+import org.eclipse.xtext.testing.util.ParseHelper;
+import org.eclipse.xtext.testing.validation.ValidationTestHelper;
+import org.example.cds.cDS.AssocDef;
+import org.example.cds.cDS.CdsFile;
+import org.example.cds.cDS.CdsPackage;
+import org.example.cds.cDS.EntityDef;
+import org.example.cds.cDS.TypeRef;
+import org.example.cds.validation.CDSValidator;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
+import com.google.inject.Inject;
+import com.google.inject.Provider;
+
+/**
+ * Cross-file scoping tests.
+ * Verifies that definitions in one .cds resource are visible to another
+ * via the workspace index (CDSResourceDescriptionStrategy).
+ */
+@ExtendWith(InjectionExtension.class)
+@InjectWith(CDSInjectorProvider.class)
+public class CDSScopingTest {
+
+    @Inject ParseHelper<CdsFile> parseHelper;
+    @Inject ValidationTestHelper validationHelper;
+    @Inject Provider<XtextResourceSet> resourceSetProvider;
+
+    // ── Type cross-reference ─────────────────────────────────────────────────
+
+    @Test
+    public void typeRefResolvesWithinFile() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            type MyStr = String;
+            entity Books { title: MyStr; }
+            """);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(1);
+        TypeRef ref = entity.getElements().get(0).getType();
+        assertFalse(ref.getRef().eIsProxy(), "TypeRef should be resolved");
+        assertEquals("MyStr", ref.getRef().getName());
+    }
+
+    @Test
+    public void typeRefResolvesAcrossFiles() throws Exception {
+        XtextResourceSet rs = resourceSetProvider.get();
+        parseHelper.parse("namespace base; type SharedStr = String;", rs);
+
+        CdsFile consumer = parseHelper.parse("""
+            using base.SharedStr;
+            entity Books { title: SharedStr; }
+            """, rs);
+
+        TypeRef ref = ((EntityDef) consumer.getDefinitions().get(0))
+            .getElements().get(0).getType();
+        assertFalse(ref.getRef().eIsProxy(),
+            "Cross-file TypeRef should resolve after using import");
+        assertEquals("SharedStr", ref.getRef().getName());
+    }
+
+    // ── Association cross-reference ──────────────────────────────────────────
+
+    @Test
+    public void assocTargetResolvesWithinFile() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            entity Orders { ID: Integer; buyer: Association to Customers; }
+            entity Customers { ID: Integer; }
+            """);
+        var assoc = ((EntityDef) file.getDefinitions().get(0))
+            .getElements().get(1).getAssoc();
+        assertFalse(assoc.getTarget().eIsProxy());
+        assertEquals("Customers", assoc.getTarget().getName());
+    }
+
+    @Test
+    public void assocTargetResolvesAcrossFiles() throws Exception {
+        XtextResourceSet rs = resourceSetProvider.get();
+        parseHelper.parse("namespace base; entity Customer { ID: Integer; }", rs);
+
+        CdsFile orders = parseHelper.parse("""
+            using base.Customer;
+            entity Orders { buyer: Association to Customer; }
+            """, rs);
+
+        AssocDef assoc = ((EntityDef) orders.getDefinitions().get(0))
+            .getElements().get(0).getAssoc();
+        assertFalse(assoc.getTarget().eIsProxy(),
+            "Cross-file association target should resolve");
+        assertEquals("Customer", assoc.getTarget().getName());
+    }
+
+    // ── Unresolved reference → error ─────────────────────────────────────────
+
+    @Test
+    public void unresolvedTypeRefProducesError() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            entity Books { title: NonExistentType; }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.TYPE_REF,
+            CDSValidator.CODE_UNRESOLVED_TYPE);
+    }
+
+    @Test
+    public void unresolvedAssocProducesError() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            entity Orders { buyer: Association to GhostEntity; }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ASSOC_DEF,
+            CDSValidator.CODE_UNRESOLVED_ASSOC);
+    }
+
+    // ── Extend cross-file ────────────────────────────────────────────────────
+
+    @Test
+    public void extendResolvesAcrossFiles() throws Exception {
+        XtextResourceSet rs = resourceSetProvider.get();
+        parseHelper.parse("entity Products { ID: Integer; }", rs);
+
+        CdsFile ext = parseHelper.parse("""
+            extend Products with { description: String; }
+            """, rs);
+
+        var extend = (org.example.cds.cDS.ExtendDef) ext.getDefinitions().get(0);
+        assertFalse(extend.getTarget().eIsProxy(),
+            "extend target should resolve across files");
+    }
+}

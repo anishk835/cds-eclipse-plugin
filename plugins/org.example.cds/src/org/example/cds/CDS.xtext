@@ -1,0 +1,432 @@
+grammar org.example.cds.CDS with org.eclipse.xtext.common.Terminals
+
+import "http://www.eclipse.org/emf/2002/Ecore" as ecore
+generate cDS "http://www.example.org/cds/CDS"
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Root
+// ─────────────────────────────────────────────────────────────────────────────
+
+CdsFile:
+    (namespaceDecl=NamespaceDecl)?
+    imports+=UsingDecl*
+    definitions+=Definition*;
+
+NamespaceDecl:
+    'namespace' name=QualifiedName ';';
+
+UsingDecl:
+    'using' importedNamespace=QualifiedNameWithWildCard ';';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Top-level definitions
+// ─────────────────────────────────────────────────────────────────────────────
+
+Definition:
+    =>EntityDef
+    | =>ViewDef
+    | =>TypeDef
+    | =>EnumDef
+    | =>ServiceDef
+    | =>AspectDef
+    | ExtendDef
+    | AnnotateDef;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Entity  (Phase 1 + Phase 6 aspect include)
+// ─────────────────────────────────────────────────────────────────────────────
+
+EntityDef:
+    {EntityDef} annotations+=Annotation*
+    'entity' name=ID
+    (':' includes+=[AspectDef|QualifiedName]
+         (',' includes+=[AspectDef|QualifiedName])*)?
+    '{'
+        members+=EntityMember*
+    '}';
+
+// EntityMember can be an Element, ActionDef, or FunctionDef
+// Order matters: most specific first (keywords disambiguate)
+EntityMember returns ecore::EObject:
+    ActionDef | FunctionDef | Element;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// View (Phase 14 + Phase 17 - SELECT queries with JOINs and aggregations)
+// ─────────────────────────────────────────────────────────────────────────────
+
+ViewDef:
+    {ViewDef} annotations+=Annotation*
+    'entity' name=ID 'as' query=SelectQuery;
+
+SelectQuery:
+    {SelectQuery}
+    'SELECT' ('from' from=[Definition|QualifiedName])?
+    '{'
+        (selectAll?='*' (excluding=ExcludingClause)?)?
+        columns+=SelectColumn (',' columns+=SelectColumn)*
+    '}'
+    (joins+=JoinClause)*
+    ('where' where=Expression)?
+    (groupBy=GroupByClause)?
+    (orderBy=OrderByClause)?
+    (union=UnionClause)?;
+
+SelectColumn:
+    (expression=Expression 'as')? alias=ID;
+
+// Phase 22B: excluding clause
+ExcludingClause:
+    'excluding' '{' fields+=[Element|ID] (',' fields+=[Element|ID])* '}';
+
+// Phase 17: JOIN support
+JoinClause:
+    joinType=JoinType 'join' target=[Definition|QualifiedName]
+    ('as' alias=ID)?
+    'on' condition=Expression;
+
+enum JoinType:
+    INNER='inner' | LEFT='left' | RIGHT='right' | FULL='full';
+
+GroupByClause:
+    'group' 'by' expressions+=Expression (',' expressions+=Expression)*
+    ('having' having=Expression)?;
+
+OrderByClause:
+    'order' 'by' items+=OrderByItem (',' items+=OrderByItem)*;
+
+OrderByItem:
+    expression=Expression (direction=OrderDirection)?;
+
+enum OrderDirection:
+    ASC='asc' | DESC='desc';
+
+// Phase 17: UNION support
+UnionClause:
+    'union' ('all')? query=SelectQuery;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Type alias  (Phase 1 + type-as-projection)
+// ─────────────────────────────────────────────────────────────────────────────
+
+TypeDef:
+    {TypeDef} annotations+=Annotation*
+    'type' name=ID
+    ('=' type=TypeRef ';'
+    | ':' 'projection' 'on' projectionSource=[Definition|QualifiedName]
+      '{' projectedFields+=TypeProjectionField (',' projectedFields+=TypeProjectionField)* '}' ';'?
+    );
+
+TypeProjectionField:
+    ref=[Element|ID];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enum type  (Phase 7 + inheritance)
+// ─────────────────────────────────────────────────────────────────────────────
+
+EnumDef:
+    {EnumDef} annotations+=Annotation*
+    'type' name=ID ':' superType=[Definition|QualifiedName] 'enum' '{'
+        values+=EnumValue (';' values+=EnumValue)* ';'?
+    '}';
+
+EnumValue:
+    annotations+=Annotation*
+    name=ID ('=' value=EnumValueLiteral)?;
+
+EnumValueLiteral:
+    intValue=INT | stringValue=STRING;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Aspect  (Phase 6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+AspectDef:
+    {AspectDef} annotations+=Annotation*
+    'aspect' name=ID '{'
+        elements+=Element*
+    '}';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Service & projection  (Phase 3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+ServiceDef:
+    {ServiceDef} annotations+=Annotation*
+    'service' name=ID '{'
+        members+=ServiceMember*
+    '}';
+
+// ServiceMember can be a ServiceEntity, ActionDef, or FunctionDef
+// Order matters: most specific first (keywords disambiguate)
+ServiceMember returns ecore::EObject:
+    ActionDef | FunctionDef | ServiceEntity;
+
+ServiceEntity:
+    annotations+=Annotation*
+    'entity' name=ID 'as' 'projection' 'on'
+    source=[EntityDef|QualifiedName]
+    ('{' projectedElements+=ProjectedElement* '}')?;
+
+ProjectedElement:
+    ref=[Element|ID] ','?;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Actions & Functions  (Phase 13)
+// ─────────────────────────────────────────────────────────────────────────────
+
+ActionDef:
+    annotations+=Annotation*
+    'action' name=ID
+    '(' (params+=Parameter (',' params+=Parameter)*)? ')'
+    ('returns' returnType=ReturnType)?
+    ';';
+
+FunctionDef:
+    annotations+=Annotation*
+    'function' name=ID
+    '(' (params+=Parameter (',' params+=Parameter)*)? ')'
+    ('returns' returnType=ReturnType)?
+    ';';
+
+Parameter:
+    name=ID ':' type=TypeRef;
+
+ReturnType:
+    TypeRef | ReturnTypeStruct;
+
+ReturnTypeStruct:
+    '{' elements+=ReturnElement (';' elements+=ReturnElement)* ';'? '}';
+
+ReturnElement:
+    name=ID ':' type=TypeRef;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Extend & annotate  (Phase 6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+ExtendDef:
+    'extend' target=[EntityDef|QualifiedName] 'with' '{'
+        elements+=Element*
+    '}';
+
+AnnotateDef:
+    'annotate' target=[Definition|QualifiedName] 'with'
+        annotations+=Annotation+ ';';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Elements  (Phase 1 + Phase 2 associations + Phase 5 expressions)
+// ─────────────────────────────────────────────────────────────────────────────
+
+Element:
+    annotations+=Annotation*
+    (modifier=ElementModifier)?
+    name=ID ':'
+    (type=TypeRef | assoc=AssocDef)
+    constraints+=Constraint*
+    ('=' defaultValue=Expression)?
+    ';';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Associations & compositions  (Phase 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+AssocDef:
+    kind=AssocKind cardinality=Cardinality? 'to' target=[EntityDef|QualifiedName];
+
+enum AssocKind:
+    ASSOCIATION='Association' | COMPOSITION='Composition';
+
+enum ElementModifier:
+    KEY='key' | VIRTUAL='virtual' | LOCALIZED='localized';
+
+Cardinality:
+    'of' (many?='many' | one?='one')?;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Constraints  (Phase 9)
+// ─────────────────────────────────────────────────────────────────────────────
+
+Constraint:
+    NotNullConstraint | UniqueConstraint | CheckConstraint;
+
+NotNullConstraint:
+    {NotNullConstraint} 'not' 'null';
+
+UniqueConstraint:
+    {UniqueConstraint} 'unique';
+
+CheckConstraint:
+    'check' expression=Expression;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Type references  (Phase 1 + built-in types)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Type references (Phase 1 + Phase 15 - Arrays and Structured Types)
+// ─────────────────────────────────────────────────────────────────────────────
+
+TypeRef:
+    ArrayTypeRef | SimpleTypeRef | StructuredTypeRef;
+
+SimpleTypeRef:
+    ref=[Definition|QualifiedName]
+    ('(' args+=TypeArg (',' args+=TypeArg)* ')')?;
+
+ArrayTypeRef:
+    'array' 'of' elementType=SimpleTypeRef;
+
+StructuredTypeRef:
+    '{' elements+=StructuredElement (';' elements+=StructuredElement)* ';'? '}';
+
+StructuredElement:
+    name=ID ':' type=TypeRef;
+
+TypeArg:
+    value=INT;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Annotations  (Phase 4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+Annotation:
+    '@' name=QualifiedName (':' value=AnnotationValue)?;
+
+AnnotationValue:
+    ArrayAnnotationValue
+    | RecordAnnotationValue
+    | PrimitiveAnnotationValue;
+
+ArrayAnnotationValue:
+    '[' (values+=AnnotationValue (',' values+=AnnotationValue)*)? ']';
+
+RecordAnnotationValue:
+    '{' (entries+=RecordEntry (',' entries+=RecordEntry)*)? '}';
+
+RecordEntry:
+    key=ID ':' value=AnnotationValue;
+
+PrimitiveAnnotationValue:
+    StringAnnotationValue
+    | NumberAnnotationValue
+    | BoolAnnotationValue
+    | EnumAnnotationValue;
+
+StringAnnotationValue: value=STRING;
+NumberAnnotationValue: value=INT ('.' decimals=INT)?;
+BoolAnnotationValue:   value=('true' | 'false');
+EnumAnnotationValue:   ref=QualifiedName;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Expressions  (Phase 5 - basic expressions only)
+// ─────────────────────────────────────────────────────────────────────────────
+
+Expression:
+    OrExpr;
+
+// Logical OR
+OrExpr returns Expression:
+    AndExpr
+    ({BinaryExpr.left=current} op='or' right=AndExpr)*;
+
+// Logical AND
+AndExpr returns Expression:
+    ComparisonExpr
+    ({BinaryExpr.left=current} op='and' right=ComparisonExpr)*;
+
+// Comparison operators
+ComparisonExpr returns Expression:
+    AddExpr
+    ({BinaryExpr.left=current} op=('=' | '!=' | '<>' | '<' | '<=' | '>' | '>=') right=AddExpr
+    | {InExpr.left=current} 'in' '(' (values+=Expression (',' values+=Expression)* | subquery=SelectQuery) ')'
+    | {BetweenExpr.left=current} 'between' lower=AddExpr 'and' upper=AddExpr
+    | {IsNullExpr.left=current} 'is' ('null' | isNotNull?='not' 'null')
+    )?;
+
+// Arithmetic addition/subtraction
+AddExpr returns Expression:
+    MulExpr
+    ({BinaryExpr.left=current} op=('+' | '-') right=MulExpr)*;
+
+// Arithmetic multiplication/division
+MulExpr returns Expression:
+    UnaryExpr
+    ({BinaryExpr.left=current} op=('*' | '/') right=UnaryExpr)*;
+
+// Unary operators
+UnaryExpr returns Expression:
+    {UnaryExpr} op=('-' | 'not') operand=PrimaryExpr
+    | PrimaryExpr;
+
+PrimaryExpr returns Expression:
+    '(' Expression ')'
+    | {LiteralExpr} value=Literal
+    | AggregationExpr
+    | CaseExpr
+    | CastExpr
+    | CoalesceExpr
+    | ExistsExpr
+    | SubqueryExpr
+    | {FuncExpr} func=ID '(' (args+=Expression (',' args+=Expression)*)? ')'
+    | {RefExpr} ref=[Element|ID];
+
+// Phase 17: Aggregation functions
+AggregationExpr:
+    {AggregationExpr} func=AggregationFunc '(' (distinct?='distinct')? arg=Expression ')';
+
+enum AggregationFunc:
+    COUNT='COUNT' | SUM='SUM' | AVG='AVG' | MIN='MIN' | MAX='MAX';
+
+// Phase 22B: CASE expressions
+CaseExpr:
+    {CaseExpr} 'CASE'
+    whenClauses+=WhenClause+
+    ('ELSE' elseExpr=Expression)?
+    'END';
+
+WhenClause:
+    'WHEN' condition=Expression 'THEN' result=Expression;
+
+// Phase 22B: CAST expressions
+CastExpr:
+    {CastExpr} 'CAST' '(' expression=Expression 'AS' targetType=TypeRef ')';
+
+// Phase 23: COALESCE function
+CoalesceExpr:
+    {CoalesceExpr} 'COALESCE' '(' expressions+=Expression (',' expressions+=Expression)+ ')';
+
+// Phase 23: EXISTS predicate
+ExistsExpr:
+    {ExistsExpr} (notExists?='NOT')? 'EXISTS' '(' subquery=SelectQuery ')';
+
+// Phase 23: Subquery expression
+SubqueryExpr:
+    {SubqueryExpr} '(' subquery=SelectQuery ')';
+
+Literal:
+    INT_LITERAL | STRING_LITERAL | BOOL_LITERAL | NULL_LITERAL | DECIMAL_LITERAL;
+
+INT_LITERAL returns Literal:
+    {IntLiteral} value=INT;
+
+STRING_LITERAL returns Literal:
+    {StringLiteral} value=STRING;
+
+BOOL_LITERAL returns Literal:
+    {BoolLiteral} value=('true' | 'false');
+
+NULL_LITERAL returns Literal:
+    {NullLiteral} value='null';
+
+DECIMAL_LITERAL returns Literal:
+    {DecimalLiteral} intPart=INT '.' fracPart=INT;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Qualified names
+// ─────────────────────────────────────────────────────────────────────────────
+
+QualifiedName:
+    ID ('.' ID)*;
+
+QualifiedNameWithWildCard:
+    QualifiedName '.*'?;

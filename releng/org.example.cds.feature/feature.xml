@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feature
+    id="org.example.cds.feature"
+    label="CDS Editor for Eclipse"
+    version="1.0.0.qualifier"
+    provider-name="Example Org"
+    plugin="org.example.cds.ui">
+
+  <description>
+    Native Eclipse editor for SAP CAP Core Data Services (.cds) files.
+    Provides syntax highlighting, outline view, go-to-definition navigation,
+    cross-file references, and semantic validation.
+  </description>
+
+  <copyright>
+    Copyright (c) 2024 Example Org and others.
+  </copyright>
+
+  <license url="https://www.eclipse.org/legal/epl-2.0/">
+    Eclipse Public License - v 2.0
+  </license>
+
+  <requires>
+    <import feature="org.eclipse.xtext.sdk" version="2.33.0" match="greaterOrEqual"/>
+    <import feature="org.eclipse.emf.sdk"   version="2.30.0" match="greaterOrEqual"/>
+  </requires>
+
+  <plugin id="org.example.cds"     version="0.0.0" unpack="false"/>
+  <plugin id="org.example.cds.ide" version="0.0.0" unpack="false"/>
+  <plugin id="org.example.cds.ui"  version="0.0.0" unpack="false"/>
+
+</feature>

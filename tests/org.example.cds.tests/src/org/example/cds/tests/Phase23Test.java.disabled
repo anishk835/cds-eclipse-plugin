@@ -1,0 +1,442 @@
+package org.example.cds.tests;
+
+import org.eclipse.xtext.testing.InjectWith;
+import org.eclipse.xtext.testing.extensions.InjectionExtension;
+import org.eclipse.xtext.testing.util.ParseHelper;
+import org.eclipse.xtext.testing.validation.ValidationTestHelper;
+import org.example.cds.cDS.CdsFile;
+import org.example.cds.cDS.CdsPackage;
+import org.example.cds.validation.CDSValidator;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import com.google.inject.Inject;
+
+/**
+ * Phase 23: Subqueries, COALESCE, and EXISTS Tests
+ */
+@ExtendWith(InjectionExtension.class)
+@InjectWith(CDSInjectorProvider.class)
+public class Phase23Test {
+
+    @Inject
+    private ParseHelper<CdsFile> parseHelper;
+
+    @Inject
+    private ValidationTestHelper validationHelper;
+
+    // ── COALESCE Function Tests ─────────────────────────────────────────────
+
+    @Test
+    public void testValidCoalesceTwoArgs() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Person { key ID: UUID; middleName: String; }
+
+            entity PersonView as SELECT from Person {
+              COALESCE(middleName, '') as middleNameSafe
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testValidCoalesceMultipleArgs() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Products { key ID: UUID; price: Decimal; stock: Integer; }
+
+            entity ProductView as SELECT from Products {
+              COALESCE(price, stock, 0.0) as safePrice
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testCoalesceWithOneArg() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; }
+
+            entity BookView as SELECT from Books {
+              COALESCE(title) as invalid
+            };
+            """);
+
+        validationHelper.assertError(file,
+            CdsPackage.Literals.COALESCE_EXPR,
+            CDSValidator.CODE_COALESCE_EMPTY);
+    }
+
+    @Test
+    public void testCoalesceTypeMismatch() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Mixed { key ID: UUID; name: String; count: Integer; }
+
+            entity MixedView as SELECT from Mixed {
+              COALESCE(name, 123) as mixed
+            };
+            """);
+
+        validationHelper.assertWarning(file,
+            null,
+            CDSValidator.CODE_COALESCE_TYPE_MISMATCH);
+    }
+
+    @Test
+    public void testNestedCoalesce() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Data { key ID: UUID; value1: Decimal; value2: Decimal; }
+
+            entity DataView as SELECT from Data {
+              COALESCE(value1, COALESCE(value2, 0.0)) as finalValue
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── EXISTS Predicate Tests ──────────────────────────────────────────────
+
+    @Test
+    public void testValidExists() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; }
+            entity Reviews { key ID: UUID; bookID: UUID; }
+
+            entity BooksWithReviews as SELECT from Books {
+              title
+            } where EXISTS (
+              SELECT ID FROM Reviews WHERE Reviews.bookID = Books.ID
+            );
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testValidNotExists() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; }
+            entity Reviews { key ID: UUID; bookID: UUID; }
+
+            entity BooksWithoutReviews as SELECT from Books {
+              title
+            } where NOT EXISTS (
+              SELECT ID FROM Reviews WHERE Reviews.bookID = Books.ID
+            );
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testExistsWithComplexSubquery() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; price: Decimal; }
+            entity Orders { key ID: UUID; bookID: UUID; quantity: Integer; }
+
+            entity PopularBooks as SELECT from Books {
+              price
+            } where EXISTS (
+              SELECT 1 FROM Orders
+              WHERE Orders.bookID = Books.ID
+                AND Orders.quantity > 10
+            );
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testMultipleExistsConditions() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; }
+            entity Reviews { key ID: UUID; bookID: UUID; }
+            entity Orders { key ID: UUID; bookID: UUID; }
+
+            entity BooksView as SELECT from Books {
+              ID
+            } where EXISTS (
+              SELECT 1 FROM Reviews WHERE Reviews.bookID = Books.ID
+            ) and EXISTS (
+              SELECT 1 FROM Orders WHERE Orders.bookID = Books.ID
+            );
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Subquery in SELECT Tests ────────────────────────────────────────────
+
+    @Test
+    public void testScalarSubqueryInSelect() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; }
+            entity Reviews { key ID: UUID; bookID: UUID; }
+
+            entity BookStats as SELECT from Books {
+              title,
+              (SELECT COUNT(*) FROM Reviews WHERE Reviews.bookID = Books.ID) as reviewCount
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testMultipleSubqueriesInSelect() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; }
+            entity Reviews { key ID: UUID; bookID: UUID; rating: Integer; }
+
+            entity BookAnalysis as SELECT from Books {
+              title,
+              (SELECT COUNT(*) FROM Reviews WHERE Reviews.bookID = Books.ID) as reviewCount,
+              (SELECT AVG(rating) FROM Reviews WHERE Reviews.bookID = Books.ID) as avgRating
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testSubqueryWithCoalesce() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; }
+            entity Reviews { key ID: UUID; bookID: UUID; rating: Decimal; }
+
+            entity BookView as SELECT from Books {
+              title,
+              COALESCE(
+                (SELECT AVG(rating) FROM Reviews WHERE Reviews.bookID = Books.ID),
+                0.0
+              ) as safeAvgRating
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── IN with Subquery Tests ──────────────────────────────────────────────
+
+    @Test
+    public void testInWithSubquery() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; authorID: UUID; }
+            entity Authors { key ID: UUID; country: String; }
+
+            entity USABooks as SELECT from Books {
+              ID
+            } where authorID in (
+              SELECT ID FROM Authors WHERE country = 'USA'
+            );
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testNotInWithSubquery() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; }
+            entity Orders { key ID: UUID; bookID: UUID; status: String; }
+
+            entity UnorderedBooks as SELECT from Books {
+              ID
+            } where ID not in (
+              SELECT bookID FROM Orders WHERE status = 'delivered'
+            );
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testInWithComplexSubquery() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; }
+            entity Reviews { key ID: UUID; bookID: UUID; rating: Integer; }
+
+            entity HighlyRatedBooks as SELECT from Books {
+              ID
+            } where ID in (
+              SELECT bookID FROM Reviews
+              WHERE rating >= 4
+              GROUP BY bookID
+              HAVING COUNT(*) >= 5
+            );
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Subquery in CASE Tests ──────────────────────────────────────────────
+
+    @Test
+    public void testSubqueryInCase() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; stock: Integer; }
+            entity Orders { key ID: UUID; bookID: UUID; status: String; }
+
+            entity BookAvailability as SELECT from Books {
+              title,
+              CASE
+                WHEN (SELECT COUNT(*) FROM Orders WHERE Orders.bookID = Books.ID AND status = 'pending') > 10
+                  THEN 'High Demand'
+                WHEN stock > 50
+                  THEN 'Available'
+                ELSE 'Limited'
+              END as availability
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Combined Features Tests ─────────────────────────────────────────────
+
+    @Test
+    public void testCoalesceWithExistsAndSubquery() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; rating: Decimal; }
+            entity Reviews { key ID: UUID; bookID: UUID; rating: Decimal; }
+
+            entity CompleteView as SELECT from Books {
+              title,
+              COALESCE(
+                (SELECT AVG(rating) FROM Reviews WHERE Reviews.bookID = Books.ID),
+                rating,
+                0.0
+              ) as displayRating,
+              CASE
+                WHEN EXISTS (SELECT 1 FROM Reviews WHERE Reviews.bookID = Books.ID)
+                  THEN 'Reviewed'
+                ELSE 'Not Reviewed'
+              END as status
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testComplexNestedSubqueries() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Authors { key ID: UUID; name: String; }
+            entity Books { key ID: UUID; authorID: UUID; }
+            entity Reviews { key ID: UUID; bookID: UUID; }
+
+            entity AuthorStats as SELECT from Authors {
+              name,
+              (SELECT COUNT(*) FROM Books WHERE Books.authorID = Authors.ID) as bookCount,
+              (
+                SELECT SUM(
+                  (SELECT COUNT(*) FROM Reviews WHERE Reviews.bookID = Books.ID)
+                )
+                FROM Books
+                WHERE Books.authorID = Authors.ID
+              ) as totalReviews
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testSubqueryWithCast() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; price: Decimal; publishYear: Integer; }
+
+            entity BookComparison as SELECT from Books {
+              price,
+              CAST(
+                (SELECT AVG(price) FROM Books WHERE publishYear = Books.publishYear)
+                AS Decimal(10,2)
+              ) as avgPriceForYear
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testMultiplePredicatesCombined() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; price: Decimal; stock: Integer; authorID: UUID; }
+            entity Reviews { key ID: UUID; bookID: UUID; rating: Integer; }
+            entity Authors { key ID: UUID; country: String; }
+
+            entity FilteredBooks as SELECT from Books {
+              ID
+            } where
+              EXISTS (SELECT 1 FROM Reviews WHERE Reviews.bookID = Books.ID AND rating >= 4)
+              AND stock > 0
+              AND price < 50
+              AND authorID IN (SELECT ID FROM Authors WHERE country = 'USA');
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testCorrelatedSubquery() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; }
+            entity Orders { key ID: UUID; bookID: UUID; quantity: Integer; }
+
+            entity BookSalesRank as SELECT from Books {
+              title,
+              (
+                SELECT COUNT(*) + 1
+                FROM Books as B2
+                WHERE (SELECT SUM(quantity) FROM Orders WHERE Orders.bookID = B2.ID)
+                    > (SELECT SUM(quantity) FROM Orders WHERE Orders.bookID = Books.ID)
+              ) as salesRank
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+}

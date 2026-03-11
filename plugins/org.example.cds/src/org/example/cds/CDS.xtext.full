@@ -1,0 +1,267 @@
+grammar org.example.cds.CDS with org.eclipse.xtext.common.Terminals
+
+generate cDS "http://www.example.org/cds/CDS"
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Root
+// ─────────────────────────────────────────────────────────────────────────────
+
+CdsFile:
+    (namespaceDecl=NamespaceDecl)?
+    imports+=UsingDecl*
+    definitions+=Definition*;
+
+NamespaceDecl:
+    'namespace' name=QualifiedName ';';
+
+UsingDecl:
+    'using' importedNamespace=QualifiedNameWithWildCard ';';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Top-level definitions
+// ─────────────────────────────────────────────────────────────────────────────
+
+Definition:
+    =>EntityDef
+    | =>TypeDef
+    | =>EnumDef
+    | =>ServiceDef
+    | =>AspectDef
+    | ExtendDef
+    | AnnotateDef;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Entity  (Phase 1 + Phase 6 aspect include)
+// ─────────────────────────────────────────────────────────────────────────────
+
+EntityDef:
+    {EntityDef} annotations+=Annotation*
+    'entity' name=ID
+    (':' includes+=[AspectDef|QualifiedName]
+         (',' includes+=[AspectDef|QualifiedName])*)?
+    '{'
+        elements+=Element*
+    '}';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Type alias  (Phase 1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+TypeDef:
+    {TypeDef} annotations+=Annotation*
+    'type' name=ID '=' type=TypeRef ';';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enum type  (Phase 7 + inheritance)
+// ─────────────────────────────────────────────────────────────────────────────
+
+EnumDef:
+    {EnumDef} annotations+=Annotation*
+    'type' name=ID ':' superType=[Definition|QualifiedName] 'enum' '{'
+        values+=EnumValue (';' values+=EnumValue)* ';'?
+    '}';
+
+EnumValue:
+    annotations+=Annotation*
+    name=ID ('=' value=EnumValueLiteral)?;
+
+EnumValueLiteral:
+    intValue=INT | stringValue=STRING;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Aspect  (Phase 6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+AspectDef:
+    {AspectDef} annotations+=Annotation*
+    'aspect' name=ID '{'
+        elements+=Element*
+    '}';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Service & projection  (Phase 3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+ServiceDef:
+    {ServiceDef} annotations+=Annotation*
+    'service' name=ID '{'
+        entities+=ServiceEntity*
+    '}';
+
+ServiceEntity:
+    annotations+=Annotation*
+    'entity' name=ID 'as' 'projection' 'on'
+    source=[EntityDef|QualifiedName]
+    ('{' projectedElements+=ProjectedElement* '}')?;
+
+ProjectedElement:
+    ref=[Element|ID] ','?;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Extend & annotate  (Phase 6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+ExtendDef:
+    'extend' target=[EntityDef|QualifiedName] 'with' '{'
+        elements+=Element*
+    '}';
+
+AnnotateDef:
+    'annotate' target=[Definition|QualifiedName] 'with'
+        annotations+=Annotation+ ';';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Elements  (Phase 1 + Phase 2 associations + Phase 5 expressions)
+// ─────────────────────────────────────────────────────────────────────────────
+
+Element:
+    annotations+=Annotation*
+    (modifier=ElementModifier)?
+    name=ID ':'
+    (type=TypeRef | assoc=AssocDef)
+    constraints+=Constraint*
+    ('=' defaultValue=Expression)?
+    ';';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Associations & compositions  (Phase 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+AssocDef:
+    kind=AssocKind cardinality=Cardinality? 'to' target=[EntityDef|QualifiedName]
+    ('on' onCondition=Expression)?;
+
+enum AssocKind:
+    ASSOCIATION='Association' | COMPOSITION='Composition';
+
+enum ElementModifier:
+    KEY='key' | VIRTUAL='virtual' | LOCALIZED='localized';
+
+Cardinality:
+    'of' (many?='many' | one?='one')?;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Constraints  (Phase 9)
+// ─────────────────────────────────────────────────────────────────────────────
+
+Constraint:
+    NotNullConstraint | UniqueConstraint | CheckConstraint;
+
+NotNullConstraint:
+    {NotNullConstraint} 'not' 'null';
+
+UniqueConstraint:
+    {UniqueConstraint} 'unique';
+
+CheckConstraint:
+    'check' expression=Expression;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Type references  (Phase 1 + built-in types)
+// ─────────────────────────────────────────────────────────────────────────────
+
+TypeRef:
+    ref=[Definition|QualifiedName]
+    ('(' args+=TypeArg (',' args+=TypeArg)* ')')?;
+
+TypeArg:
+    value=INT;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Annotations  (Phase 4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+Annotation:
+    '@' name=QualifiedName (':' value=AnnotationValue)?;
+
+AnnotationValue:
+    ArrayAnnotationValue
+    | RecordAnnotationValue
+    | PrimitiveAnnotationValue;
+
+ArrayAnnotationValue:
+    '[' (values+=AnnotationValue (',' values+=AnnotationValue)*)? ']';
+
+RecordAnnotationValue:
+    '{' (entries+=RecordEntry (',' entries+=RecordEntry)*)? '}';
+
+RecordEntry:
+    key=ID ':' value=AnnotationValue;
+
+PrimitiveAnnotationValue:
+    StringAnnotationValue
+    | NumberAnnotationValue
+    | BoolAnnotationValue
+    | EnumAnnotationValue;
+
+StringAnnotationValue: value=STRING;
+NumberAnnotationValue: value=INT ('.' decimals=INT)?;
+BoolAnnotationValue:   value=('true' | 'false');
+EnumAnnotationValue:   ref=QualifiedName;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Expressions  (Phase 5 + Phase 12 enhancements)
+// ─────────────────────────────────────────────────────────────────────────────
+
+Expression:
+    LogicalOrExpr;
+
+LogicalOrExpr returns Expression:
+    LogicalAndExpr
+    ({BinaryExpr.left=current} op='or' right=LogicalAndExpr)*;
+
+LogicalAndExpr returns Expression:
+    ComparisonExpr
+    ({BinaryExpr.left=current} op='and' right=ComparisonExpr)*;
+
+ComparisonExpr returns Expression:
+    AddExpr
+    ({BinaryExpr.left=current} op=('=' | '!=' | '<' | '<=' | '>' | '>=') right=AddExpr)?;
+
+AddExpr returns Expression:
+    MulExpr
+    ({BinaryExpr.left=current} op=('+' | '-') right=MulExpr)*;
+
+MulExpr returns Expression:
+    UnaryExpr
+    ({BinaryExpr.left=current} op=('*' | '/') right=UnaryExpr)*;
+
+UnaryExpr returns Expression:
+    {UnaryExpr} op=('-') operand=PrimaryExpr
+    | PrimaryExpr;
+
+PrimaryExpr returns Expression:
+    '(' Expression ')'
+    | {LiteralExpr} value=Literal
+    | {FuncExpr} func=ID '(' (args+=Expression (',' args+=Expression)*)? ')'
+    | {EnumRef} '#' value=[EnumValue|ID]
+    | {SelfRef} '$self' ('.' path=[Element|ID])?
+    | {RefExpr} ref=[Element|ID];
+
+Literal:
+    INT_LITERAL | STRING_LITERAL | BOOL_LITERAL | NULL_LITERAL | DECIMAL_LITERAL;
+
+INT_LITERAL returns Literal:
+    {IntLiteral} value=INT;
+
+STRING_LITERAL returns Literal:
+    {StringLiteral} value=STRING;
+
+BOOL_LITERAL returns Literal:
+    {BoolLiteral} value=('true' | 'false');
+
+NULL_LITERAL returns Literal:
+    {NullLiteral} value='null';
+
+DECIMAL_LITERAL returns Literal:
+    {DecimalLiteral} intPart=INT '.' fracPart=INT;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Qualified names
+// ─────────────────────────────────────────────────────────────────────────────
+
+QualifiedName:
+    ID ('.' ID)*;
+
+QualifiedNameWithWildCard:
+    QualifiedName '.*'?;

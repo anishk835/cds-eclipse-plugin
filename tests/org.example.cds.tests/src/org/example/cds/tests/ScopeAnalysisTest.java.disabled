@@ -1,0 +1,332 @@
+package org.example.cds.tests;
+
+import org.eclipse.xtext.testing.InjectWith;
+import org.eclipse.xtext.testing.extensions.InjectionExtension;
+import org.eclipse.xtext.testing.util.ParseHelper;
+import org.eclipse.xtext.testing.validation.ValidationTestHelper;
+import org.example.cds.cDS.CdsFile;
+import org.example.cds.cDS.CdsPackage;
+import org.example.cds.validation.CDSValidator;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
+import com.google.inject.Inject;
+
+/**
+ * Phase 19: Scope Analysis Tests
+ *
+ * Tests scope resolution and validation:
+ * - Unresolved type references
+ * - Unresolved association targets
+ * - Namespace consistency hints
+ * - Ambiguous imports detection
+ */
+@ExtendWith(InjectionExtension.class)
+@InjectWith(CDSInjectorProvider.class)
+public class ScopeAnalysisTest {
+
+    @Inject
+    private ParseHelper<CdsFile> parseHelper;
+
+    @Inject
+    private ValidationTestHelper validationHelper;
+
+    private CdsFile parse(String input) throws Exception {
+        return parseHelper.parse(input);
+    }
+
+    // ── Type Reference Resolution Tests ────────────────────────────────────
+
+    @Test
+    public void testUnresolvedTypeReference() throws Exception {
+        // Should error: NonExistentType doesn't exist
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Books {
+              key ID: UUID;
+              title: String;
+              author: NonExistentType;
+            }
+            """);
+
+        validationHelper.assertError(file,
+            CdsPackage.Literals.SIMPLE_TYPE_REF,
+            CDSValidator.CODE_UNRESOLVED_TYPE);
+    }
+
+    @Test
+    public void testResolvedBuiltInType() throws Exception {
+        // Should pass: all built-in types
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Books {
+              key ID: UUID;
+              title: String;
+              price: Decimal;
+              publishDate: Date;
+              active: Boolean;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testResolvedCustomType() throws Exception {
+        // Should pass: Money is defined in same file
+        CdsFile file = parse("""
+            namespace test;
+
+            type Money : Decimal(10, 2);
+
+            entity Books {
+              key ID: UUID;
+              price: Money;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Association Target Resolution Tests ────────────────────────────────
+
+    @Test
+    public void testUnresolvedAssociationTarget() throws Exception {
+        // Should error: NonExistentEntity doesn't exist
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Books {
+              key ID: UUID;
+              author: Association to NonExistentEntity;
+            }
+            """);
+
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ASSOC_DEF,
+            CDSValidator.CODE_UNRESOLVED_ASSOC);
+    }
+
+    @Test
+    public void testValidAssociationTarget() throws Exception {
+        // Should pass: Authors is defined
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Authors {
+              key ID: UUID;
+              name: String;
+            }
+
+            entity Books {
+              key ID: UUID;
+              author: Association to Authors;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testAssociationToMany() throws Exception {
+        // Should pass: Association to many
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Books {
+              key ID: UUID;
+            }
+
+            entity Authors {
+              key ID: UUID;
+              books: Association to many Books;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Namespace Consistency Tests ─────────────────────────────────────────
+
+    @Test
+    public void testNamespaceConsistencyHint() throws Exception {
+        // Should have info hint about namespace prefix
+        CdsFile file = parse("""
+            namespace bookshop;
+
+            entity Books {
+              key ID: UUID;
+            }
+            """);
+
+        validationHelper.assertInfo(file,
+            CdsPackage.Literals.DEFINITION,
+            CDSValidator.CODE_NAMESPACE_HINT);
+    }
+
+    @Test
+    public void testNoNamespaceDeclared() throws Exception {
+        // Should pass: no namespace, no hints
+        CdsFile file = parse("""
+            entity Books {
+              key ID: UUID;
+            }
+            """);
+
+        validationHelper.assertNoIssues(file);
+    }
+
+    @Test
+    public void testFullyQualifiedName() throws Exception {
+        // Should pass: using fully qualified name
+        CdsFile file = parse("""
+            namespace bookshop;
+
+            entity bookshop.Books {
+              key ID: UUID;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Complex Scope Scenarios ─────────────────────────────────────────────
+
+    @Test
+    public void testMultipleEntitiesWithReferences() throws Exception {
+        // Should pass: all references resolved
+        CdsFile file = parse("""
+            namespace bookshop;
+
+            entity Authors {
+              key ID: UUID;
+              name: String;
+            }
+
+            entity Publishers {
+              key ID: UUID;
+              name: String;
+            }
+
+            entity Books {
+              key ID: UUID;
+              title: String;
+              author: Association to Authors;
+              publisher: Association to Publishers;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testCircularAssociations() throws Exception {
+        // Should pass: circular associations are valid in CDS
+        CdsFile file = parse("""
+            namespace test;
+
+            entity A {
+              key ID: UUID;
+              b: Association to B;
+            }
+
+            entity B {
+              key ID: UUID;
+              a: Association to A;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testSelfReference() throws Exception {
+        // Should pass: self-references are valid
+        CdsFile file = parse("""
+            namespace test;
+
+            entity TreeNode {
+              key ID: UUID;
+              parent: Association to TreeNode;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Type Definition Tests ───────────────────────────────────────────────
+
+    @Test
+    public void testTypeBasedOnBuiltIn() throws Exception {
+        // Should pass: custom type based on built-in
+        CdsFile file = parse("""
+            namespace test;
+
+            type EmailAddress : String(100);
+            type Amount : Decimal(15, 2);
+
+            entity Users {
+              key ID: UUID;
+              email: EmailAddress;
+              balance: Amount;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testTypeBasedOnNonExistent() throws Exception {
+        // Should error: base type doesn't exist
+        CdsFile file = parse("""
+            namespace test;
+
+            type Money : NonExistentBase;
+            """);
+
+        validationHelper.assertError(file,
+            CdsPackage.Literals.SIMPLE_TYPE_REF,
+            CDSValidator.CODE_UNRESOLVED_TYPE);
+    }
+
+    // ── Enum Reference Tests ────────────────────────────────────────────────
+
+    @Test
+    public void testValidEnumReference() throws Exception {
+        // Should pass: enum is defined
+        CdsFile file = parse("""
+            namespace test;
+
+            type Status : String enum {
+              Active;
+              Inactive;
+            }
+
+            entity Users {
+              key ID: UUID;
+              status: Status;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testUnresolvedEnumType() throws Exception {
+        // Should error: enum type doesn't exist
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Users {
+              key ID: UUID;
+              status: NonExistentEnum;
+            }
+            """);
+
+        validationHelper.assertError(file,
+            CdsPackage.Literals.SIMPLE_TYPE_REF,
+            CDSValidator.CODE_UNRESOLVED_TYPE);
+    }
+}

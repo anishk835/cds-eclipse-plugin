@@ -1,0 +1,237 @@
+```
+╔══════════════════════════════════════════════════════════════════════════╗
+║              SAP CAP CDS Eclipse Plugin - Status Overview               ║
+║                          Coverage: ~47%                                  ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ ✅ FULLY IMPLEMENTED (Phases 1-10)                                       │
+└──────────────────────────────────────────────────────────────────────────┘
+
+  ✅ Core Structure (95%)           ✅ Annotations (80%)
+  ├─ Namespaces & imports           ├─ Simple: @readonly
+  ├─ Entity definitions             ├─ Structured: @UI.LineItem: [...]
+  ├─ Type aliases                   ├─ Arrays, records
+  └─ 14 built-in types              └─ Enum references: @Criticality: #High
+
+  ✅ Associations (60%)             ✅ Expressions (50%)
+  ├─ Association to                 ├─ Arithmetic: +, -, *, /
+  ├─ Composition of                 ├─ Literals: int, string, bool, decimal
+  ├─ Cardinality: one/many          ├─ Element refs: price, tax
+  └─ ❌ Missing: ON conditions      └─ ❌ Missing: comparison, logical ops
+
+  ✅ Services (40%)                 ✅ Aspects (90%)
+  ├─ Service definitions            ├─ Aspect definitions
+  ├─ Entity projections             ├─ Multiple inclusion
+  ├─ Element selection              ├─ extend...with
+  └─ ❌ Missing: SELECT queries     └─ annotate...with
+
+  ✅ Enums (95%)                    ✅ Key Constraints (90%)
+  ├─ String & Integer enums         ├─ Single: key ID: UUID
+  ├─ Explicit values                ├─ Composite: key ID, lineNo
+  ├─ Enum inheritance               ├─ Validation & warnings
+  └─ 23 validation rules            └─ ✅ Production-ready
+
+  ✅ Data Constraints (70%)         ✅ Virtual Elements (85%)
+  ├─ not null                       ├─ virtual rating: Decimal
+  ├─ unique                         ├─ With expressions
+  ├─ check age >= 18                ├─ Service projection support
+  ├─ default 'active'               └─ Validation & warnings
+  └─ ❌ Missing: foreign keys
+
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ ❌ MISSING CRITICAL FEATURES                                             │
+└──────────────────────────────────────────────────────────────────────────┘
+
+  🔴 CRITICAL - Required for Production
+
+  ❌ Association ON Conditions (Phase 12)
+     customer: Association to Customers
+       on customer.ID = $self.customer_ID;
+
+     Impact: Cannot model proper foreign keys
+     Effort: 2-3 weeks
+
+  ❌ CDS Query Language (Phases 14-16)
+     entity Stats as SELECT from Books {
+       author.ID,
+       count(*) as bookCount
+     } group by author.ID;
+
+     Impact: No views, reports, or aggregations
+     Effort: 4-6 weeks
+
+  ❌ Actions & Functions (Phase 13)
+     action cancelOrder(reason: String) returns Boolean;
+     function calculateTotal() returns Decimal;
+
+     Impact: Cannot model business logic entry points
+     Effort: 2-3 weeks
+
+
+  🟡 HIGH PRIORITY - Needed for Most Apps
+
+  ❌ Localized Data (Phase 11)
+     name: localized String(100);
+
+     Impact: No i18n support
+     Effort: 1-2 weeks
+
+  ❌ Structured Types
+     type Address {
+       street: String;
+       city: String;
+     }
+
+     Impact: Limited type reuse
+     Effort: 2 weeks
+
+  ❌ Enhanced Expressions
+     isValid: Boolean = price > 0 and stock > 0;
+     fullName: String = firstName || ' ' || lastName;
+
+     Impact: Limited calculated field capabilities
+     Effort: 1-2 weeks
+
+
+  🟢 MEDIUM PRIORITY - Nice to Have
+
+  ❌ Array Types
+     items: array of { product: String; quantity: Integer; };
+
+  ❌ Draft Enablement
+     @odata.draft.enabled entity Orders { ... }
+
+  ❌ Authorization
+     @requires: 'authenticated-user'
+     @restrict: [{ grant: 'READ', to: 'Viewer' }]
+
+  ❌ Events
+     event OrderPlaced { orderID: UUID; total: Decimal; }
+
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ COVERAGE BY CATEGORY                                                     │
+└──────────────────────────────────────────────────────────────────────────┘
+
+  Core Language      ████████████████░░░░  75% ✅ Good
+  Data Modeling      █████████████░░░░░░░  65% ⚠️  Partial
+  Associations       ███████████░░░░░░░░░  55% ⚠️  Partial
+  Services           █████░░░░░░░░░░░░░░░  25% ❌ Limited
+  Constraints        ████████████░░░░░░░░  60% ⚠️  Partial
+  Expressions        ██████████░░░░░░░░░░  50% ⚠️  Limited
+  Query Language     █░░░░░░░░░░░░░░░░░░░   5% ❌ Missing
+  Advanced Features  ██░░░░░░░░░░░░░░░░░░  10% ❌ Missing
+
+  ══════════════════════════════════════════════════════════════════
+  OVERALL            █████████░░░░░░░░░░░  47% ⚠️  Not Production-Ready
+
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ PRODUCTION READINESS                                                     │
+└──────────────────────────────────────────────────────────────────────────┘
+
+  ✅ SUITABLE FOR:                  ❌ NOT SUITABLE FOR:
+
+  • Learning CDS syntax             • Production SAP CAP apps
+  • Prototyping data models         • Complex data models
+  • Simple internal tools           • Fiori applications
+  • Entity definition practice      • Enterprise applications
+                                    • Applications with business logic
+                                    • Multilingual applications
+
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ EXAMPLE: WHAT WORKS vs WHAT DOESN'T                                     │
+└──────────────────────────────────────────────────────────────────────────┘
+
+  ✅ WORKS - This will parse and validate correctly:
+
+    namespace my.bookshop;
+
+    type Currency = String(3);
+
+    type Status : String enum { Active; Inactive; }
+
+    entity Books {
+      key ID: UUID not null;
+      title: String(100) not null;
+      price: Decimal(9,2) check price > 0;
+      currency: Currency default 'USD';
+      status: Status default #Active;
+      stock: Integer;
+
+      virtual isAvailable: Boolean = stock > 0;
+
+      author: Association to Authors;
+    }
+
+    entity Authors {
+      key ID: UUID;
+      name: String(100) not null unique;
+    }
+
+    service CatalogService {
+      entity Books as projection on Books {
+        ID, title, price
+      }
+    }
+
+
+  ❌ DOESN'T WORK - These critical features are missing:
+
+    entity Orders {
+      customer_ID: UUID;
+
+      // ❌ ON condition not supported
+      customer: Association to Customers
+        on customer.ID = $self.customer_ID;
+
+      // ❌ Action not supported
+      action cancel(reason: String) returns Boolean;
+
+      // ❌ Localized not supported
+      description: localized String(500);
+    }
+
+    // ❌ SELECT query not supported
+    entity Stats as SELECT from Orders {
+      customer.ID,
+      count(*) as orderCount
+    } group by customer.ID;
+
+    // ❌ Logical operators not supported
+    entity ValidOrders {
+      isValid: Boolean = status = 'active' and total > 0;
+    }
+
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ ROADMAP TO PRODUCTION (80% coverage)                                     │
+└──────────────────────────────────────────────────────────────────────────┘
+
+  Phase 12: ON Conditions        [═══════════] 2-3 weeks  🔴 Critical
+  Phase 13: Actions/Functions    [═══════════] 2-3 weeks  🔴 Critical
+  Phase 14-16: Query Language    [═══════════════════════] 4-6 weeks  🔴 Critical
+  Phase 11: Localized Data       [═══════] 1-2 weeks  🟡 High
+
+  Total estimated effort: 10-15 weeks to reach 80% (production-ready)
+
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ VERDICT                                                                  │
+└──────────────────────────────────────────────────────────────────────────┘
+
+  Current Status: 47% Complete
+
+  ✅ Excellent for:  Learning, prototyping, simple tools
+  ⚠️  Limited for:   Complex data models, business applications
+  ❌ Not ready for:  Production SAP CAP apps, Fiori, enterprise use
+
+  Key Blockers: ON conditions, queries, actions/functions
+
+  Recommendation: Use SAP Business Application Studio for production work
+                  Use this plugin for learning and prototyping
+
+```

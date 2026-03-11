@@ -1,0 +1,332 @@
+package org.example.cds.tests;
+
+import org.eclipse.xtext.testing.InjectWith;
+import org.eclipse.xtext.testing.extensions.InjectionExtension;
+import org.eclipse.xtext.testing.util.ParseHelper;
+import org.eclipse.xtext.testing.validation.ValidationTestHelper;
+import org.example.cds.cDS.CdsFile;
+import org.example.cds.cDS.CdsPackage;
+import org.example.cds.validation.CDSValidator;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
+import com.google.inject.Inject;
+
+/**
+ * Phase 18: Type System Tests
+ *
+ * Tests type checking for expressions:
+ * - Numeric operators on non-numeric types
+ * - Logical operators on non-boolean types
+ * - Comparison of incompatible types
+ * - Unary operators on wrong types
+ * - Calculated field type mismatches
+ */
+@ExtendWith(InjectionExtension.class)
+@InjectWith(CDSInjectorProvider.class)
+public class TypeSystemTest {
+
+    @Inject
+    private ParseHelper<CdsFile> parseHelper;
+
+    @Inject
+    private ValidationTestHelper validationHelper;
+
+    private CdsFile parse(String input) throws Exception {
+        return parseHelper.parse(input);
+    }
+
+    // ── Numeric Operator Tests ────────────────────────────────────────────
+
+    @Test
+    public void testNumericOperatorWithStrings() throws Exception {
+        // Should error: can't add String + String
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              name: String;
+              result: Integer = name + name;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.BINARY_EXPR,
+            CDSValidator.CODE_TYPE_MISMATCH);
+    }
+
+    @Test
+    public void testValidNumericOperation() throws Exception {
+        // Should pass: Decimal + Integer
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              price: Decimal;
+              quantity: Integer;
+              total: Decimal = price * quantity;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testNumericOperatorWithBoolean() throws Exception {
+        // Should error: can't multiply Boolean * Integer
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              active: Boolean;
+              count: Integer;
+              result: Integer = active * count;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.BINARY_EXPR,
+            CDSValidator.CODE_TYPE_MISMATCH);
+    }
+
+    @Test
+    public void testSubtractionWithStrings() throws Exception {
+        // Should error: can't subtract String - String
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              name: String;
+              result: String = name - name;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.BINARY_EXPR,
+            CDSValidator.CODE_TYPE_MISMATCH);
+    }
+
+    // ── Logical Operator Tests ────────────────────────────────────────────
+
+    @Test
+    public void testLogicalOperatorWithNonBoolean() throws Exception {
+        // Should error: 'and' requires Boolean
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              x: Integer;
+              y: Integer;
+              result: Boolean = x and y;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.BINARY_EXPR,
+            CDSValidator.CODE_TYPE_MISMATCH);
+    }
+
+    @Test
+    public void testValidLogicalOperation() throws Exception {
+        // Should pass: Boolean and Boolean
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              active: Boolean;
+              verified: Boolean;
+              status: Boolean = active and verified;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testLogicalOrWithStrings() throws Exception {
+        // Should error: 'or' requires Boolean
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              name1: String;
+              name2: String;
+              result: Boolean = name1 or name2;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.BINARY_EXPR,
+            CDSValidator.CODE_TYPE_MISMATCH);
+    }
+
+    // ── Comparison Operator Tests ──────────────────────────────────────────
+
+    @Test
+    public void testComparisonWithIncompatibleTypes() throws Exception {
+        // Should warn: comparing String with Integer
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              name: String;
+              count: Integer;
+              result: Boolean = name = count;
+            }
+            """);
+        validationHelper.assertWarning(file,
+            CdsPackage.Literals.BINARY_EXPR,
+            CDSValidator.CODE_INCOMPATIBLE_TYPES);
+    }
+
+    @Test
+    public void testValidComparison() throws Exception {
+        // Should pass: comparing Integer with Integer
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              count1: Integer;
+              count2: Integer;
+              result: Boolean = count1 > count2;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testComparisonNumericPromotion() throws Exception {
+        // Should pass: comparing Integer with Decimal (compatible)
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              count: Integer;
+              price: Decimal;
+              result: Boolean = count < price;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Unary Operator Tests ───────────────────────────────────────────────
+
+    @Test
+    public void testUnaryNotOnNonBoolean() throws Exception {
+        // Should error: 'not' requires Boolean
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              count: Integer;
+              result: Boolean = not count;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.UNARY_EXPR,
+            CDSValidator.CODE_TYPE_MISMATCH);
+    }
+
+    @Test
+    public void testValidUnaryNot() throws Exception {
+        // Should pass: not Boolean
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              active: Boolean;
+              result: Boolean = not active;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testNegationOnString() throws Exception {
+        // Should error: '-' requires numeric
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              name: String;
+              result: String = -name;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.UNARY_EXPR,
+            CDSValidator.CODE_TYPE_MISMATCH);
+    }
+
+    @Test
+    public void testValidNegation() throws Exception {
+        // Should pass: -Integer
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              count: Integer;
+              result: Integer = -count;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Calculated Field Type Tests ────────────────────────────────────────
+
+    @Test
+    public void testCalculatedFieldTypeMismatch() throws Exception {
+        // Should warn: declared Integer but expression is String
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              name: String;
+              wrongType: Integer = name;
+            }
+            """);
+        validationHelper.assertWarning(file,
+            CdsPackage.Literals.ELEMENT,
+            CDSValidator.CODE_TYPE_MISMATCH);
+    }
+
+    @Test
+    public void testValidCalculatedField() throws Exception {
+        // Should pass: declared Decimal, expression is Decimal
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              price: Decimal;
+              quantity: Integer;
+              total: Decimal = price * quantity;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Complex Expression Tests ───────────────────────────────────────────
+
+    @Test
+    public void testNestedArithmeticExpressions() throws Exception {
+        // Should pass: all numeric operations
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              a: Integer;
+              b: Integer;
+              c: Decimal;
+              result: Decimal = (a + b) * c;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testMixedTypeInNestedExpression() throws Exception {
+        // Should error: String in arithmetic expression
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              count: Integer;
+              name: String;
+              result: Integer = count + (name * 10);
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.BINARY_EXPR,
+            CDSValidator.CODE_TYPE_MISMATCH);
+    }
+
+    @Test
+    public void testBooleanLogicInCalculation() throws Exception {
+        // Should error: can't use Boolean in arithmetic
+        CdsFile file = parse("""
+            entity Test {
+              key ID: UUID;
+              active: Boolean;
+              count: Integer;
+              result: Integer = count + active;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.BINARY_EXPR,
+            CDSValidator.CODE_TYPE_MISMATCH);
+    }
+}

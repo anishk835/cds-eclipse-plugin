@@ -1,0 +1,476 @@
+package org.example.cds.tests;
+
+import org.eclipse.xtext.testing.InjectWith;
+import org.eclipse.xtext.testing.extensions.InjectionExtension;
+import org.eclipse.xtext.testing.util.ParseHelper;
+import org.eclipse.xtext.testing.validation.ValidationTestHelper;
+import org.example.cds.cDS.CdsFile;
+import org.example.cds.cDS.CdsPackage;
+import org.example.cds.validation.CDSValidator;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
+import com.google.inject.Inject;
+
+/**
+ * Phase 20: Foreign Key Validation Tests
+ *
+ * Tests foreign key and association validation:
+ * - ON condition type compatibility
+ * - Managed association key requirements
+ * - Composite key handling
+ * - Bidirectional association consistency
+ * - Association to many validation
+ */
+@ExtendWith(InjectionExtension.class)
+@InjectWith(CDSInjectorProvider.class)
+public class ForeignKeyTest {
+
+    @Inject
+    private ParseHelper<CdsFile> parseHelper;
+
+    @Inject
+    private ValidationTestHelper validationHelper;
+
+    private CdsFile parse(String input) throws Exception {
+        return parseHelper.parse(input);
+    }
+
+    // ── ON Condition Type Compatibility Tests ──────────────────────────────
+
+    @Test
+    public void testOnConditionTypeMismatch() throws Exception {
+        // Should error: comparing UUID with Integer
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Authors {
+              key ID: Integer;
+            }
+
+            entity Books {
+              key ID: UUID;
+              author: Association to Authors on author.ID = ID;
+            }
+            """);
+
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ASSOC_DEF,
+            CDSValidator.CODE_ON_CONDITION_TYPE_MISMATCH);
+    }
+
+    @Test
+    public void testOnConditionCompatibleTypes() throws Exception {
+        // Should pass: both UUID
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Authors {
+              key ID: UUID;
+            }
+
+            entity Books {
+              key ID: UUID;
+              authorID: UUID;
+              author: Association to Authors on author.ID = authorID;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testOnConditionNumericPromotion() throws Exception {
+        // Should pass: Integer and Decimal are compatible
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Categories {
+              key code: Integer;
+            }
+
+            entity Products {
+              key ID: UUID;
+              categoryCode: Decimal;
+              category: Association to Categories on category.code = categoryCode;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Managed Association Tests ──────────────────────────────────────────
+
+    @Test
+    public void testManagedAssociationWithKey() throws Exception {
+        // Should pass: target has key, managed association OK
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Authors {
+              key ID: UUID;
+            }
+
+            entity Books {
+              key ID: UUID;
+              author: Association to Authors;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testManagedAssociationWithoutKey() throws Exception {
+        // Should warn: target has no key
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Authors {
+              name: String;
+            }
+
+            entity Books {
+              key ID: UUID;
+              author: Association to Authors;
+            }
+            """);
+
+        validationHelper.assertWarning(file,
+            CdsPackage.Literals.ASSOC_DEF,
+            CDSValidator.CODE_MISSING_TARGET_KEY);
+    }
+
+    @Test
+    public void testUnmanagedAssociationWithoutKey() throws Exception {
+        // Should pass: unmanaged association doesn't require target key
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Authors {
+              name: String;
+            }
+
+            entity Books {
+              key ID: UUID;
+              authorName: String;
+              author: Association to Authors on author.name = authorName;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Composite Key Tests ─────────────────────────────────────────────────
+
+    @Test
+    public void testCompositeKeyAssociation() throws Exception {
+        // Should provide info: composite key
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Countries {
+              key code: String(2);
+              key region: String(10);
+              name: String;
+            }
+
+            entity Cities {
+              key ID: UUID;
+              country: Association to Countries;
+            }
+            """);
+
+        validationHelper.assertInfo(file,
+            CdsPackage.Literals.ASSOC_DEF,
+            CDSValidator.CODE_COMPOSITE_KEY_INFO);
+    }
+
+    @Test
+    public void testCompositeKeyOnCondition() throws Exception {
+        // Should pass: ON condition with composite key
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Countries {
+              key code: String(2);
+              key region: String(10);
+            }
+
+            entity Cities {
+              key ID: UUID;
+              countryCode: String(2);
+              countryRegion: String(10);
+              country: Association to Countries
+                on country.code = countryCode
+                and country.region = countryRegion;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Bidirectional Association Tests ────────────────────────────────────
+
+    @Test
+    public void testBidirectionalManagedAssociations() throws Exception {
+        // Should pass: both managed
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Authors {
+              key ID: UUID;
+              books: Association to many Books;
+            }
+
+            entity Books {
+              key ID: UUID;
+              author: Association to Authors;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testBidirectionalMixedAssociations() throws Exception {
+        // Should provide info: inconsistency
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Authors {
+              key ID: UUID;
+              books: Association to many Books on books.authorID = ID;
+            }
+
+            entity Books {
+              key ID: UUID;
+              authorID: UUID;
+              author: Association to Authors;
+            }
+            """);
+
+        validationHelper.assertInfo(file,
+            CdsPackage.Literals.ASSOC_DEF,
+            CDSValidator.CODE_BIDIRECTIONAL_INCONSISTENCY);
+    }
+
+    // ── Association to Many Tests ──────────────────────────────────────────
+
+    @Test
+    public void testAssociationToManyManaged() throws Exception {
+        // Should provide info: managed to-many
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Books {
+              key ID: UUID;
+            }
+
+            entity Authors {
+              key ID: UUID;
+              books: Association to many Books;
+            }
+            """);
+
+        validationHelper.assertInfo(file,
+            CdsPackage.Literals.ASSOC_DEF,
+            CDSValidator.CODE_TO_MANY_WITHOUT_ON);
+    }
+
+    @Test
+    public void testAssociationToManyUnmanaged() throws Exception {
+        // Should pass: explicit ON condition
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Books {
+              key ID: UUID;
+              authorID: UUID;
+            }
+
+            entity Authors {
+              key ID: UUID;
+              books: Association to many Books on books.authorID = ID;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testAssociationToManyWithoutBacklink() throws Exception {
+        // Should provide info: no backlink
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Books {
+              key ID: UUID;
+            }
+
+            entity Authors {
+              key ID: UUID;
+              books: Association to many Books;
+            }
+            """);
+
+        validationHelper.assertInfo(file,
+            CdsPackage.Literals.ASSOC_DEF,
+            CDSValidator.CODE_TO_MANY_NO_BACKLINK);
+    }
+
+    @Test
+    public void testAssociationToManyWithBacklink() throws Exception {
+        // Should pass: has backlink
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Authors {
+              key ID: UUID;
+              books: Association to many Books;
+            }
+
+            entity Books {
+              key ID: UUID;
+              author: Association to Authors;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Empty ON Condition Tests ────────────────────────────────────────────
+
+    @Test
+    public void testEmptyOnCondition() throws Exception {
+        // Should warn: ON condition without references
+        // Note: This is hard to test without a proper expression that doesn't reference fields
+        // In practice, CDS parser might not allow truly empty ON conditions
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Authors {
+              key ID: UUID;
+            }
+
+            entity Books {
+              key ID: UUID;
+              author: Association to Authors on true;
+            }
+            """);
+
+        // This should warn about empty references
+        validationHelper.assertWarning(file,
+            CdsPackage.Literals.ASSOC_DEF,
+            CDSValidator.CODE_EMPTY_ON_CONDITION);
+    }
+
+    // ── Self-Reference Tests ────────────────────────────────────────────────
+
+    @Test
+    public void testSelfReferenceManagedAssociation() throws Exception {
+        // Should pass: self-reference with managed association
+        CdsFile file = parse("""
+            namespace test;
+
+            entity TreeNode {
+              key ID: UUID;
+              parent: Association to TreeNode;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testSelfReferenceUnmanagedAssociation() throws Exception {
+        // Should pass: self-reference with ON condition
+        CdsFile file = parse("""
+            namespace test;
+
+            entity TreeNode {
+              key ID: UUID;
+              parentID: UUID;
+              parent: Association to TreeNode on parent.ID = parentID;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Complex Scenarios ───────────────────────────────────────────────────
+
+    @Test
+    public void testMultipleAssociations() throws Exception {
+        // Should pass: multiple associations from same entity
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Authors {
+              key ID: UUID;
+            }
+
+            entity Publishers {
+              key ID: UUID;
+            }
+
+            entity Books {
+              key ID: UUID;
+              author: Association to Authors;
+              publisher: Association to Publishers;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testChainedAssociations() throws Exception {
+        // Should pass: association chains
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Countries {
+              key code: String(2);
+            }
+
+            entity Cities {
+              key ID: UUID;
+              country: Association to Countries;
+            }
+
+            entity Addresses {
+              key ID: UUID;
+              city: Association to Cities;
+            }
+
+            entity Customers {
+              key ID: UUID;
+              address: Association to Addresses;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testAssociationWithCustomType() throws Exception {
+        // Should pass: association using custom key type
+        CdsFile file = parse("""
+            namespace test;
+
+            type CustomerID : UUID;
+
+            entity Customers {
+              key ID: CustomerID;
+            }
+
+            entity Orders {
+              key ID: UUID;
+              customer: Association to Customers;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+}

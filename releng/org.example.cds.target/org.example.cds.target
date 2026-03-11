@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?pde version="3.8"?>
+<target name="CDS Editor Target Platform" sequenceNumber="7">
+  <locations>
+    <!--
+      Single planner location combining the 2024-06 release train and Eclipse
+      Orbit. Using one location with includeMode="planner" ensures full
+      transitive dependency resolution — Xtext 2.35 requires guava 33.x,
+      log4j, antlr, and guice, all of which come from Orbit.
+    -->
+    <location includeAllPlatforms="false" includeConfigurePhase="true"
+              includeMode="planner" includeSource="false"
+              type="InstallableUnit">
+
+      <repository location="https://download.eclipse.org/releases/2024-06/"/>
+      <repository location="https://download.eclipse.org/tools/orbit/simrel/orbit-aggregation/release/4.32.0/"/>
+
+      <!-- Eclipse platform + tooling -->
+      <unit id="org.eclipse.platform.feature.group"  version="0.0.0"/>
+      <unit id="org.eclipse.rcp.feature.group"        version="0.0.0"/>
+      <unit id="org.eclipse.jdt.feature.group"        version="0.0.0"/>
+      <unit id="org.eclipse.pde.feature.group"        version="0.0.0"/>
+
+      <!-- EMF -->
+      <unit id="org.eclipse.emf.sdk.feature.group"    version="0.0.0"/>
+
+      <!-- Xtext full SDK — planner will pull all transitive deps -->
+      <unit id="org.eclipse.xtext.sdk.feature.group"  version="0.0.0"/>
+
+      <!-- Orbit bundles required by Xtext 2.35 but not in release train -->
+      <unit id="org.apache.log4j"                     version="0.0.0"/>
+      <unit id="com.google.guava"                      version="0.0.0"/>
+      <unit id="com.google.inject"                     version="0.0.0"/>
+      <unit id="org.antlr.runtime"                     version="0.0.0"/>
+    </location>
+  </locations>
+</target>
+

@@ -1,0 +1,12 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: CDS IDE Services
+Bundle-SymbolicName: org.example.cds.ide;singleton:=true
+Bundle-Version: 1.0.0.qualifier
+Bundle-RequiredExecutionEnvironment: JavaSE-17
+Require-Bundle: org.example.cds,
+ org.eclipse.xtext.ide,
+ org.eclipse.xtext.util
+Export-Package: org.example.cds.ide,
+ org.example.cds.ide.contentassist.antlr,
+ org.example.cds.ide.contentassist.antlr.internal

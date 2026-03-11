@@ -1,0 +1,272 @@
+package org.example.cds.tests;
+
+import org.eclipse.xtext.testing.InjectWith;
+import org.eclipse.xtext.testing.extensions.InjectionExtension;
+import org.eclipse.xtext.testing.util.ParseHelper;
+import org.eclipse.xtext.testing.validation.ValidationTestHelper;
+import org.example.cds.cDS.CdsFile;
+import org.example.cds.cDS.CdsPackage;
+import org.example.cds.validation.CDSValidator;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import com.google.inject.Inject;
+
+/**
+ * Phase 22A: Advanced Projection Tests
+ * Tests built-in function validation and column alias uniqueness.
+ */
+@ExtendWith(InjectionExtension.class)
+@InjectWith(CDSInjectorProvider.class)
+public class AdvancedProjectionTest {
+
+    @Inject
+    private ParseHelper<CdsFile> parseHelper;
+
+    @Inject
+    private ValidationTestHelper validationHelper;
+
+    // ── Built-in Function Tests ────────────────────────────────────────
+
+    @Test
+    public void testValidStringFunction() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; }
+
+            entity BookView as SELECT from Books {
+              UPPER(title) as titleUpper,
+              LOWER(title) as titleLower,
+              CONCAT('Book: ', title) as fullTitle
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testUnknownFunction() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; }
+
+            entity BookView as SELECT from Books {
+              UNKNOWN_FUNC(title) as result
+            };
+            """);
+
+        validationHelper.assertInfo(file,
+            CdsPackage.Literals.FUNC_EXPR__FUNC,
+            CDSValidator.CODE_UNKNOWN_FUNCTION);
+    }
+
+    @Test
+    public void testFunctionArgCountError() throws Exception {
+        // UPPER expects 1 argument, got 2
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; }
+
+            entity BookView as SELECT from Books {
+              UPPER(title, title) as result
+            };
+            """);
+
+        validationHelper.assertError(file,
+            CdsPackage.Literals.FUNC_EXPR__FUNC,
+            CDSValidator.CODE_FUNCTION_ARG_COUNT);
+    }
+
+    @Test
+    public void testFunctionArgTypeWarning() throws Exception {
+        // UPPER expects string, got number
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Products { key ID: UUID; price: Decimal; }
+
+            entity ProductView as SELECT from Products {
+              UPPER(price) as result
+            };
+            """);
+
+        validationHelper.assertWarning(file,
+            null,
+            CDSValidator.CODE_FUNCTION_ARG_TYPE);
+    }
+
+    @Test
+    public void testVariadicFunction() throws Exception {
+        // CONCAT accepts multiple arguments
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Person { key ID: UUID; first: String; middle: String; last: String; }
+
+            entity PersonView as SELECT from Person {
+              CONCAT(first, ' ', middle, ' ', last) as fullName
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testNumericFunctions() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Products { key ID: UUID; price: Decimal; }
+
+            entity ProductView as SELECT from Products {
+              ROUND(price, 2) as roundedPrice,
+              FLOOR(price) as floorPrice,
+              CEIL(price) as ceilPrice,
+              ABS(price) as absPrice
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testDateTimeFunctions() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Orders { key ID: UUID; }
+
+            entity OrderView as SELECT from Orders {
+              CURRENT_DATE() as today,
+              CURRENT_TIME() as now,
+              CURRENT_TIMESTAMP() as timestamp
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testSubstringFunction() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; isbn: String; }
+
+            entity BookView as SELECT from Books {
+              SUBSTRING(isbn, 1, 3) as isbnPrefix,
+              SUBSTRING(isbn, 4, 10) as isbnSuffix
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testLengthAndTrimFunctions() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; }
+
+            entity BookView as SELECT from Books {
+              LENGTH(title) as titleLength,
+              TRIM(title) as titleTrimmed
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testNestedFunctions() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; }
+
+            entity BookView as SELECT from Books {
+              UPPER(TRIM(title)) as cleanTitle,
+              LENGTH(CONCAT('Book: ', title)) as fullLength
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Column Alias Uniqueness Tests ──────────────────────────────────
+
+    @Test
+    public void testUniqueColumnAliases() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; author: String; }
+
+            entity BookView as SELECT from Books {
+              title as bookTitle,
+              author as bookAuthor,
+              ID as bookID
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testDuplicateColumnAlias() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; author: String; }
+
+            entity BookView as SELECT from Books {
+              title as name,
+              author as name
+            };
+            """);
+
+        validationHelper.assertError(file,
+            CdsPackage.Literals.SELECT_COLUMN__ALIAS,
+            CDSValidator.CODE_DUPLICATE_COLUMN_ALIAS);
+    }
+
+    @Test
+    public void testMultipleDuplicateAliases() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; author: String; isbn: String; }
+
+            entity BookView as SELECT from Books {
+              title as field,
+              author as field,
+              isbn as field
+            };
+            """);
+
+        // Should have multiple errors (one for each duplicate)
+        validationHelper.assertError(file,
+            CdsPackage.Literals.SELECT_COLUMN__ALIAS,
+            CDSValidator.CODE_DUPLICATE_COLUMN_ALIAS);
+    }
+
+    @Test
+    public void testAliasesWithFunctions() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; isbn: String; }
+
+            entity BookView as SELECT from Books {
+              UPPER(title) as upperTitle,
+              LOWER(title) as lowerTitle,
+              SUBSTRING(isbn, 1, 3) as isbnPrefix
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+}

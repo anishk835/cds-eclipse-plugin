@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>org.example.cds</groupId>
+  <artifactId>org.example.cds.parent</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <properties>
+    <tycho.version>4.0.4</tycho.version>
+    <xtext.version>2.41.0</xtext.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <modules>
+    <!-- Target platform MUST be first so Tycho resolves it before any plugin -->
+    <module>releng/org.example.cds.target</module>
+    <module>plugins/org.example.cds</module>
+    <module>plugins/org.example.cds.ide</module>
+    <module>plugins/org.example.cds.ui</module>
+    <module>tests/org.example.cds.tests</module>
+    <module>tests/org.example.cds.ui.tests</module>
+    <module>releng/org.example.cds.feature</module>
+    <module>releng/org.example.cds.p2</module>
+  </modules>
+
+  <repositories>
+    <!--
+      Re-enable Maven Central explicitly. Tycho suppresses it by default
+      in favour of p2, but exec-maven-plugin's <dependencies> block needs
+      it to resolve regular Maven artifacts (MWE2, Xtext generator, Guava).
+    -->
+    <repository>
+      <id>central</id>
+      <url>https://repo1.maven.org/maven2</url>
+      <releases><enabled>true</enabled></releases>
+      <snapshots><enabled>false</enabled></snapshots>
+    </repository>
+    <!-- Eclipse Maven releases (MWE2 launcher lives here) -->
+    <repository>
+      <id>eclipse-maven</id>
+      <url>https://repo.eclipse.org/content/groups/releases/</url>
+      <releases><enabled>true</enabled></releases>
+      <snapshots><enabled>false</enabled></snapshots>
+    </repository>
+  </repositories>
+
+  <pluginRepositories>
+    <pluginRepository>
+      <id>central</id>
+      <url>https://repo1.maven.org/maven2</url>
+    </pluginRepository>
+    <pluginRepository>
+      <id>eclipse-maven</id>
+      <url>https://repo.eclipse.org/content/groups/releases/</url>
+    </pluginRepository>
+  </pluginRepositories>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>tycho-maven-plugin</artifactId>
+        <version>${tycho.version}</version>
+        <extensions>true</extensions>
+      </plugin>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>target-platform-configuration</artifactId>
+        <version>${tycho.version}</version>
+        <configuration>
+          <!--
+            Reference the .target file directly by path rather than by Maven
+            artifact coordinates. This avoids Tycho trying to download
+            org.example.cds.target from a remote repository before the
+            reactor has had a chance to install it locally.
+          -->
+          <target>
+            <file>${maven.multiModuleProjectDirectory}/releng/org.example.cds.target/org.example.cds.target</file>
+          </target>
+          <environments>
+            <environment>
+              <os>linux</os><ws>gtk</ws><arch>x86_64</arch>
+            </environment>
+            <environment>
+              <os>win32</os><ws>win32</ws><arch>x86_64</arch>
+            </environment>
+            <environment>
+              <os>macosx</os><ws>cocoa</ws><arch>x86_64</arch>
+            </environment>
+          </environments>
+          <!-- Explicitly configure execution environment -->
+          <executionEnvironment>JavaSE-17</executionEnvironment>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>tycho-compiler-plugin</artifactId>
+        <version>${tycho.version}</version>
+        <configuration>
+          <useProjectSettings>false</useProjectSettings>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>tycho-packaging-plugin</artifactId>
+        <version>${tycho.version}</version>
+        <configuration>
+          <strictVersions>false</strictVersions>
+          <!-- Preserve MANIFEST.MF headers from source -->
+          <deriveHeaderFromSource>false</deriveHeaderFromSource>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

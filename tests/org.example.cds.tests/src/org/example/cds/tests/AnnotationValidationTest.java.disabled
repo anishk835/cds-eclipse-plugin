@@ -1,0 +1,401 @@
+package org.example.cds.tests;
+
+import org.eclipse.xtext.testing.InjectWith;
+import org.eclipse.xtext.testing.extensions.InjectionExtension;
+import org.eclipse.xtext.testing.util.ParseHelper;
+import org.eclipse.xtext.testing.validation.ValidationTestHelper;
+import org.example.cds.cDS.CdsFile;
+import org.example.cds.cDS.CdsPackage;
+import org.example.cds.validation.CDSValidator;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
+import com.google.inject.Inject;
+
+/**
+ * Phase 21: Annotation Validation Tests
+ *
+ * Tests annotation validation:
+ * - Unknown annotation detection
+ * - Value type validation
+ * - Target validation
+ * - Deprecated annotation warnings
+ */
+@ExtendWith(InjectionExtension.class)
+@InjectWith(CDSInjectorProvider.class)
+public class AnnotationValidationTest {
+
+    @Inject
+    private ParseHelper<CdsFile> parseHelper;
+
+    @Inject
+    private ValidationTestHelper validationHelper;
+
+    private CdsFile parse(String input) throws Exception {
+        return parseHelper.parse(input);
+    }
+
+    // ── Unknown Annotation Tests ───────────────────────────────────────────
+
+    @Test
+    public void testKnownAnnotation() throws Exception {
+        // Should pass: @readonly is known
+        CdsFile file = parse("""
+            namespace test;
+
+            @readonly
+            entity Books {
+              key ID: UUID;
+              title: String;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testUnknownStandardAnnotation() throws Exception {
+        // Should provide info: looks like standard annotation but unknown
+        CdsFile file = parse("""
+            namespace test;
+
+            @UI.UnknownField: []
+            entity Books {
+              key ID: UUID;
+            }
+            """);
+
+        validationHelper.assertInfo(file,
+            CdsPackage.Literals.ANNOTATION,
+            CDSValidator.CODE_UNKNOWN_ANNOTATION);
+    }
+
+    @Test
+    public void testCustomAnnotation() throws Exception {
+        // Should pass: custom annotations are OK
+        CdsFile file = parse("""
+            namespace test;
+
+            @MyApp.customField: "value"
+            entity Books {
+              key ID: UUID;
+            }
+            """);
+
+        validationHelper.assertNoIssues(file);
+    }
+
+    // ── Value Type Validation Tests ────────────────────────────────────────
+
+    @Test
+    public void testBooleanAnnotationWithNumber() throws Exception {
+        // Should error: @readonly expects boolean, got number
+        CdsFile file = parse("""
+            namespace test;
+
+            @readonly: 123
+            entity Books {
+              key ID: UUID;
+            }
+            """);
+
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ANNOTATION,
+            CDSValidator.CODE_ANNOTATION_VALUE_TYPE);
+    }
+
+    @Test
+    public void testBooleanAnnotationValid() throws Exception {
+        // Should pass: @readonly with boolean value
+        CdsFile file = parse("""
+            namespace test;
+
+            @readonly: true
+            entity Books {
+              key ID: UUID;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testStringAnnotationWithBoolean() throws Exception {
+        // Should error: @title expects string, got boolean
+        CdsFile file = parse("""
+            namespace test;
+
+            @title: true
+            entity Books {
+              key ID: UUID;
+            }
+            """);
+
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ANNOTATION,
+            CDSValidator.CODE_ANNOTATION_VALUE_TYPE);
+    }
+
+    @Test
+    public void testStringAnnotationValid() throws Exception {
+        // Should pass: @title with string value
+        CdsFile file = parse("""
+            namespace test;
+
+            @title: 'Book Catalog'
+            entity Books {
+              key ID: UUID;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testArrayAnnotationWithString() throws Exception {
+        // Should error: @UI.LineItem expects array, got string
+        CdsFile file = parse("""
+            namespace test;
+
+            @UI.LineItem: "not-an-array"
+            entity Books {
+              key ID: UUID;
+            }
+            """);
+
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ANNOTATION,
+            CDSValidator.CODE_ANNOTATION_VALUE_TYPE);
+    }
+
+    // ── Target Validation Tests ─────────────────────────────────────────────
+
+    @Test
+    public void testEntityAnnotationOnEntity() throws Exception {
+        // Should pass: @UI.LineItem on entity
+        CdsFile file = parse("""
+            namespace test;
+
+            @UI.LineItem: []
+            entity Books {
+              key ID: UUID;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testEntityAnnotationOnElement() throws Exception {
+        // Should error: @UI.LineItem can't be on element
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Books {
+              key ID: UUID;
+
+              @UI.LineItem: []
+              title: String;
+            }
+            """);
+
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ANNOTATION,
+            CDSValidator.CODE_ANNOTATION_INVALID_TARGET);
+    }
+
+    @Test
+    public void testElementAnnotationOnElement() throws Exception {
+        // Should pass: @mandatory on element
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Books {
+              key ID: UUID;
+
+              @mandatory: true
+              title: String;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testElementAnnotationOnEntity() throws Exception {
+        // Should error: @mandatory can't be on entity
+        CdsFile file = parse("""
+            namespace test;
+
+            @mandatory: true
+            entity Books {
+              key ID: UUID;
+            }
+            """);
+
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ANNOTATION,
+            CDSValidator.CODE_ANNOTATION_INVALID_TARGET);
+    }
+
+    // ── Multiple Annotations Tests ──────────────────────────────────────────
+
+    @Test
+    public void testMultipleValidAnnotations() throws Exception {
+        // Should pass: multiple valid annotations
+        CdsFile file = parse("""
+            namespace test;
+
+            @title: 'Books'
+            @readonly: true
+            @description: 'Book catalog'
+            entity Books {
+              key ID: UUID;
+
+              @mandatory: true
+              @title: 'Book Title'
+              title: String;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testMixedValidAndInvalid() throws Exception {
+        // Should have error for one annotation
+        CdsFile file = parse("""
+            namespace test;
+
+            @title: 'Books'
+            @readonly: 123
+            entity Books {
+              key ID: UUID;
+            }
+            """);
+
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ANNOTATION,
+            CDSValidator.CODE_ANNOTATION_VALUE_TYPE);
+    }
+
+    // ── Standard Annotations Tests ──────────────────────────────────────────
+
+    @Test
+    public void testCoreAnnotations() throws Exception {
+        // Should pass: various core annotations
+        CdsFile file = parse("""
+            namespace test;
+
+            @cds.autoexpose: true
+            @cds.persistence.skip: false
+            entity Books {
+              key ID: UUID;
+
+              @Core.Computed: true
+              computedField: String;
+
+              @Core.Immutable: true
+              createdAt: DateTime;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testAuthorizationAnnotations() throws Exception {
+        // Should pass: authorization annotations
+        CdsFile file = parse("""
+            namespace test;
+
+            @requires: 'authenticated-user'
+            service BookshopService {
+              @restrict: []
+              entity Books {
+                key ID: UUID;
+              }
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testValidationAnnotations() throws Exception {
+        // Should pass: validation annotations
+        CdsFile file = parse("""
+            namespace test;
+
+            entity Products {
+              key ID: UUID;
+
+              @mandatory: true
+              name: String;
+
+              @assert.range: [0, 100]
+              discount: Integer;
+
+              @assert.format: '[A-Z]{3}'
+              code: String;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testODataAnnotations() throws Exception {
+        // Should pass: OData capability annotations
+        CdsFile file = parse("""
+            namespace test;
+
+            @Capabilities.Insertable: true
+            @Capabilities.Updatable: false
+            @Capabilities.Deletable: false
+            entity Books {
+              key ID: UUID;
+
+              @Common.Label: 'Title'
+              title: String;
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Complex Scenarios ───────────────────────────────────────────────────
+
+    @Test
+    public void testServiceAnnotations() throws Exception {
+        // Should pass: service-level annotations
+        CdsFile file = parse("""
+            namespace test;
+
+            @title: 'Bookshop Service'
+            @requires: 'authenticated-user'
+            service BookshopService {
+              @readonly: true
+              entity Books {
+                key ID: UUID;
+              }
+            }
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testTypeAnnotations() throws Exception {
+        // Should pass: type annotations
+        CdsFile file = parse("""
+            namespace test;
+
+            @title: 'Email Address'
+            @description: 'Valid email address format'
+            type EmailAddress : String(100);
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+}

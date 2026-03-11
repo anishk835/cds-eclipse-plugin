@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.example.cds</groupId>
+    <artifactId>org.example.cds.parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>org.example.cds</artifactId>
+  <packaging>eclipse-plugin</packaging>
+
+  <dependencyManagement>
+    <dependencies>
+      <!--
+        xtext-dev-bom coordinates Xtext versions but pins emf.common to an
+        old version that lacks CommonUtil.newURL(). We import it first, then
+        override the EMF artifacts explicitly below so the newer versions win
+        (Maven's last-declaration-wins rule inside dependencyManagement).
+      -->
+      <dependency>
+        <groupId>org.eclipse.xtext</groupId>
+        <artifactId>xtext-dev-bom</artifactId>
+        <version>${xtext.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <!-- Force EMF to a coherent set — 2.31.0 has CommonUtil.newURL() -->
+      <dependency>
+        <groupId>org.eclipse.emf</groupId>
+        <artifactId>org.eclipse.emf.common</artifactId>
+        <version>2.31.0</version>
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.emf</groupId>
+        <artifactId>org.eclipse.emf.ecore</artifactId>
+        <version>2.36.0</version>
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.emf</groupId>
+        <artifactId>org.eclipse.emf.codegen</artifactId>
+        <version>2.24.0</version>
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.emf</groupId>
+        <artifactId>org.eclipse.emf.codegen.ecore</artifactId>
+        <version>2.36.0</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <plugins>
+      <!-- Step 1: Run MWE2 workflow to generate parser, AST, and stubs -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>mwe2-generate</id>
+            <phase>generate-sources</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>org.eclipse.emf.mwe2.launch.runtime.Mwe2Launcher</mainClass>
+              <arguments>
+                <argument>${project.basedir}/src/org/example/cds/GenerateCDS.mwe2</argument>
+                <argument>-p</argument>
+                <argument>rootPath=${maven.multiModuleProjectDirectory}</argument>
+              </arguments>
+              <includePluginDependencies>true</includePluginDependencies>
+              <cleanupDaemonThreads>false</cleanupDaemonThreads>
+            </configuration>
+          </execution>
+        </executions>
+        <!--
+          These dependencies put Mwe2Launcher and all Xtext generator
+          components onto exec-maven-plugin's classpath at codegen time.
+          They are NOT OSGi runtime deps — they only exist during generate-sources.
+        -->
+        <dependencies>
+          <!-- MWE2 launcher -->
+          <dependency>
+            <groupId>org.eclipse.emf</groupId>
+            <artifactId>org.eclipse.emf.mwe2.launch</artifactId>
+            <version>2.15.0</version>
+          </dependency>
+          <!-- Xtext generator framework -->
+          <dependency>
+            <groupId>org.eclipse.xtext</groupId>
+            <artifactId>org.eclipse.xtext.xtext.generator</artifactId>
+            <version>${xtext.version}</version>
+          </dependency>
+          <dependency>
+            <groupId>org.eclipse.xtext</groupId>
+            <artifactId>org.eclipse.xtext</artifactId>
+            <version>${xtext.version}</version>
+          </dependency>
+          <dependency>
+            <groupId>org.eclipse.xtext</groupId>
+            <artifactId>org.eclipse.xtext.xbase</artifactId>
+            <version>${xtext.version}</version>
+          </dependency>
+          <!--
+            EMF codegen artifacts — all pinned to the same release train.
+            Must be explicit here: exec-maven-plugin resolves these independently
+            of the project's dependencyManagement section.
+          -->
+          <dependency>
+            <groupId>org.eclipse.emf</groupId>
+            <artifactId>org.eclipse.emf.codegen</artifactId>
+            <version>2.24.0</version>
+          </dependency>
+          <dependency>
+            <groupId>org.eclipse.emf</groupId>
+            <artifactId>org.eclipse.emf.codegen.ecore</artifactId>
+            <version>2.36.0</version>
+          </dependency>
+          <dependency>
+            <groupId>org.eclipse.emf</groupId>
+            <artifactId>org.eclipse.emf.ecore</artifactId>
+            <version>2.36.0</version>
+          </dependency>
+          <!--
+            emf.common MUST be 2.31.0+. The xtext-dev-bom pins it to an old
+            version that lacks CommonUtil.newURL(), causing NoSuchMethodError
+            during EMF codegen. This explicit declaration forces the newer version.
+          -->
+          <dependency>
+            <groupId>org.eclipse.emf</groupId>
+            <artifactId>org.eclipse.emf.common</artifactId>
+            <version>2.31.0</version>
+          </dependency>
+          <!-- Guava (required by Xtext generator internals) -->
+          <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>33.2.0-jre</version>
+          </dependency>
+        </dependencies>
+      </plugin>
+
+      <!-- Step 2: Add generated sources to compile path -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.4.0</version>
+        <executions>
+          <execution>
+            <id>add-source</id>
+            <phase>generate-sources</phase>
+            <goals><goal>add-source</goal></goals>
+            <configuration>
+              <sources>
+                <source>src-gen</source>
+                <source>xtend-gen</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Disable BND processing to preserve MANIFEST headers -->
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>tycho-bnd-plugin</artifactId>
+        <version>${tycho.version}</version>
+        <executions>
+          <execution>
+            <id>default-process</id>
+            <phase>none</phase>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

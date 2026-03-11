@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<site>
+  <description>CDS Editor for Eclipse — P2 Update Site</description>
+
+  <category-def name="cds.editor" label="CDS Editor"/>
+
+  <feature
+      url="features/org.example.cds.feature_1.0.0.qualifier.jar"
+      id="org.example.cds.feature"
+      version="1.0.0.qualifier">
+    <category name="cds.editor"/>
+  </feature>
+</site>

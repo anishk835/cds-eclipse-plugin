@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.example.cds</groupId>
+    <artifactId>org.example.cds.parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+  <artifactId>org.example.cds.target</artifactId>
+  <!--
+    eclipse-target-definition is the Tycho packaging type for .target files.
+    Tycho resolves this module locally (from the reactor) before any plugin
+    module tries to use it — which is why it must appear first in the parent
+    <modules> list.
+  -->
+  <packaging>eclipse-target-definition</packaging>
+</project>

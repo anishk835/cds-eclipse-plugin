@@ -1,0 +1,1072 @@
+package org.example.cds.tests;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import org.eclipse.xtext.testing.InjectWith;
+import org.eclipse.xtext.testing.extensions.InjectionExtension;
+import org.eclipse.xtext.testing.util.ParseHelper;
+import org.eclipse.xtext.testing.validation.ValidationTestHelper;
+import org.example.cds.cDS.AssocDef;
+import org.example.cds.cDS.CdsFile;
+import org.example.cds.cDS.CdsPackage;
+import org.example.cds.cDS.CheckConstraint;
+import org.example.cds.cDS.Element;
+import org.example.cds.cDS.ElementModifier;
+import org.example.cds.cDS.EntityDef;
+import org.example.cds.cDS.EnumDef;
+import org.example.cds.cDS.EnumRef;
+import org.example.cds.cDS.NotNullConstraint;
+import org.example.cds.cDS.ServiceDef;
+import org.example.cds.cDS.TypeDef;
+import org.example.cds.validation.CDSValidator;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
+import com.google.inject.Inject;
+
+/**
+ * Grammar parsing and semantic validation tests.
+ * Covers Phases 1–6 constructs.
+ */
+@ExtendWith(InjectionExtension.class)
+@InjectWith(CDSInjectorProvider.class)
+public class CDSParsingTest {
+
+    @Inject ParseHelper<CdsFile> parseHelper;
+    @Inject ValidationTestHelper validationHelper;
+
+    // ── Phase 1: Structural ──────────────────────────────────────────────────
+
+    @Test
+    public void parseNamespaceAndUsing() throws Exception {
+        CdsFile file = parse("""
+            namespace my.bookshop;
+            using my.common.Types;
+            """);
+        assertEquals("my.bookshop", file.getNamespaceDecl().getName());
+        assertEquals(1, file.getImports().size());
+    }
+
+    @Test
+    public void parseEntityWithElements() throws Exception {
+        CdsFile file = parse("""
+            entity Books {
+              ID    : Integer;
+              title : String;
+            }
+            """);
+        assertEquals(1, file.getDefinitions().size());
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        assertEquals("Books", entity.getName());
+        assertEquals(2, entity.getElements().size());
+        assertEquals("ID", entity.getElements().get(0).getName());
+    }
+
+    @Test
+    public void parseTypeDef() throws Exception {
+        CdsFile file = parse("type Currency = String;");
+        assertTrue(file.getDefinitions().get(0) instanceof TypeDef);
+        assertEquals("Currency", file.getDefinitions().get(0).getName());
+    }
+
+    @Test
+    public void parseTypeWithArguments() throws Exception {
+        CdsFile file = parse("""
+            entity Books {
+              price : Decimal(9,2);
+            }
+            """);
+        var element = ((EntityDef) file.getDefinitions().get(0)).getElements().get(0);
+        assertEquals(2, element.getType().getArgs().size());
+        assertEquals(9, element.getType().getArgs().get(0).getValue());
+        assertEquals(2, element.getType().getArgs().get(1).getValue());
+    }
+
+    // ── Phase 1: Validation ──────────────────────────────────────────────────
+
+    @Test
+    public void detectDuplicateDefinition() throws Exception {
+        CdsFile file = parse("""
+            entity Books { ID: Integer; }
+            entity Books { title: String; }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ENTITY_DEF,
+            CDSValidator.CODE_DUPLICATE_DEFINITION);
+    }
+
+    @Test
+    public void detectDuplicateElement() throws Exception {
+        CdsFile file = parse("""
+            entity Books {
+              ID: Integer;
+              ID: String;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ELEMENT,
+            CDSValidator.CODE_DUPLICATE_ELEMENT);
+    }
+
+    @Test
+    public void warnOnEmptyEntity() throws Exception {
+        CdsFile file = parse("entity Empty {}");
+        validationHelper.assertWarning(file,
+            CdsPackage.Literals.ENTITY_DEF,
+            CDSValidator.CODE_EMPTY_ENTITY);
+    }
+
+    @Test
+    public void noErrorsOnValidEntity() throws Exception {
+        CdsFile file = parse("""
+            entity Books {
+              ID    : Integer;
+              title : String(100);
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Phase 2: Associations ────────────────────────────────────────────────
+
+    @Test
+    public void parseAssociation() throws Exception {
+        CdsFile file = parse("""
+            entity Orders {
+              ID    : Integer;
+              buyer : Association to Customers;
+            }
+            entity Customers { ID: Integer; }
+            """);
+        var element = ((EntityDef) file.getDefinitions().get(0)).getElements().get(1);
+        assertNotNull(element.getAssoc());
+        assertFalse(element.getAssoc().getTarget().eIsProxy());
+        assertEquals("Customers", element.getAssoc().getTarget().getName());
+    }
+
+    @Test
+    public void parseCompositionOfMany() throws Exception {
+        CdsFile file = parse("""
+            entity Orders {
+              ID    : Integer;
+              items : Composition of many Items;
+            }
+            entity Items { ID: Integer; }
+            """);
+        var assoc = ((EntityDef) file.getDefinitions().get(0))
+            .getElements().get(1).getAssoc();
+        assertTrue(assoc.getCardinality().isMany());
+    }
+
+    // ── Phase 3: Services ────────────────────────────────────────────────────
+
+    @Test
+    public void parseServiceWithProjection() throws Exception {
+        CdsFile file = parse("""
+            entity Books { ID: Integer; title: String; }
+            service CatalogService {
+              entity Books as projection on Books { ID, title }
+            }
+            """);
+        assertTrue(file.getDefinitions().stream()
+            .anyMatch(d -> d instanceof ServiceDef));
+        ServiceDef service = (ServiceDef) file.getDefinitions().stream()
+            .filter(d -> d instanceof ServiceDef).findFirst().get();
+        assertEquals("CatalogService", service.getName());
+        assertEquals(1, service.getEntities().size());
+    }
+
+    // ── Phase 4: Annotations ─────────────────────────────────────────────────
+
+    @Test
+    public void parseEntityAnnotation() throws Exception {
+        CdsFile file = parse("""
+            @readonly
+            entity Books { ID: Integer; }
+            """);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        assertEquals(1, entity.getAnnotations().size());
+        assertEquals("readonly", entity.getAnnotations().get(0).getName());
+    }
+
+    @Test
+    public void parseComplexAnnotation() throws Exception {
+        CdsFile file = parse("""
+            @UI.LineItem: [{ Value: title }]
+            entity Books { ID: Integer; title: String; }
+            """);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        assertEquals("UI.LineItem", entity.getAnnotations().get(0).getName());
+        assertNotNull(entity.getAnnotations().get(0).getValue());
+    }
+
+    // ── Phase 5: Expressions ─────────────────────────────────────────────────
+
+    @Test
+    public void parseCalculatedElement() throws Exception {
+        CdsFile file = parse("""
+            entity Books {
+              gross     : Decimal(9,2);
+              tax       : Decimal(9,2);
+              netAmount : Decimal(9,2) = gross - tax;
+            }
+            """);
+        var element = ((EntityDef) file.getDefinitions().get(0))
+            .getElements().get(2);
+        assertNotNull(element.getDefaultValue());
+    }
+
+    // ── Phase 6: Advanced ────────────────────────────────────────────────────
+
+    @Test
+    public void parseAspectAndEntityInclude() throws Exception {
+        CdsFile file = parse("""
+            aspect Timestamped {
+              createdAt  : DateTime;
+              modifiedAt : DateTime;
+            }
+            entity Books : Timestamped {
+              ID : Integer;
+            }
+            """);
+        EntityDef entity = (EntityDef) file.getDefinitions().stream()
+            .filter(d -> d instanceof EntityDef).findFirst().get();
+        assertEquals(1, entity.getIncludes().size());
+        assertEquals("Timestamped", entity.getIncludes().get(0).getName());
+    }
+
+    @Test
+    public void parseExtendDef() throws Exception {
+        CdsFile file = parse("""
+            entity Books { ID: Integer; }
+            extend Books with { author: String; }
+            """);
+        var extend = file.getDefinitions().stream()
+            .filter(d -> d instanceof org.example.cds.cDS.ExtendDef)
+            .findFirst().orElseThrow();
+        assertFalse(((org.example.cds.cDS.ExtendDef) extend).getTarget().eIsProxy());
+    }
+
+    @Test
+    public void parseAnnotateDef() throws Exception {
+        CdsFile file = parse("""
+            entity Books { ID: Integer; }
+            annotate Books with @readonly;
+            """);
+        long annotates = file.getDefinitions().stream()
+            .filter(d -> d instanceof org.example.cds.cDS.AnnotateDef)
+            .count();
+        assertEquals(1, annotates);
+    }
+
+    // ── Phase 7: Enums ───────────────────────────────────────────────────────
+
+    @Test
+    public void parseStringEnum() throws Exception {
+        CdsFile file = parse("""
+            type Color : String enum {
+              Red;
+              Green;
+              Blue;
+            }
+            """);
+        assertTrue(file.getDefinitions().get(0) instanceof EnumDef);
+        EnumDef enumDef = (EnumDef) file.getDefinitions().get(0);
+        assertEquals("Color", enumDef.getName());
+        assertEquals("String", enumDef.getBaseType());
+        assertEquals(3, enumDef.getValues().size());
+        assertEquals("Red", enumDef.getValues().get(0).getName());
+        assertEquals("Green", enumDef.getValues().get(1).getName());
+        assertEquals("Blue", enumDef.getValues().get(2).getName());
+    }
+
+    @Test
+    public void parseIntegerEnumWithExplicitValues() throws Exception {
+        CdsFile file = parse("""
+            type Status : Integer enum {
+              Active = 1;
+              Inactive = 0;
+              Pending = 2;
+            }
+            """);
+        EnumDef enumDef = (EnumDef) file.getDefinitions().get(0);
+        assertEquals("Status", enumDef.getName());
+        assertEquals("Integer", enumDef.getBaseType());
+        assertEquals(3, enumDef.getValues().size());
+        assertEquals("Active", enumDef.getValues().get(0).getName());
+        assertNotNull(enumDef.getValues().get(0).getValue());
+        assertEquals(1, enumDef.getValues().get(0).getValue().getIntValue());
+    }
+
+    @Test
+    public void parseStringEnumWithExplicitValues() throws Exception {
+        CdsFile file = parse("""
+            type Gender : String enum {
+              male;
+              female;
+              non_binary = 'non-binary';
+            }
+            """);
+        EnumDef enumDef = (EnumDef) file.getDefinitions().get(0);
+        assertEquals(3, enumDef.getValues().size());
+        assertNull(enumDef.getValues().get(0).getValue());
+        assertNull(enumDef.getValues().get(1).getValue());
+        assertNotNull(enumDef.getValues().get(2).getValue());
+        assertEquals("'non-binary'", enumDef.getValues().get(2).getValue().getStringValue());
+    }
+
+    @Test
+    public void parseEnumInEntity() throws Exception {
+        CdsFile file = parse("""
+            type Color : String enum { Red; Green; Blue; }
+            entity Products {
+              ID    : Integer;
+              color : Color;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        assertTrue(file.getDefinitions().get(0) instanceof EnumDef);
+        assertTrue(file.getDefinitions().get(1) instanceof EntityDef);
+    }
+
+    @Test
+    public void detectDuplicateEnumValue() throws Exception {
+        CdsFile file = parse("""
+            type Status : String enum {
+              Active;
+              Active;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ENUM_VALUE,
+            CDSValidator.CODE_DUPLICATE_ENUM_VALUE);
+    }
+
+    @Test
+    public void detectInvalidEnumBaseType() throws Exception {
+        CdsFile file = parse("""
+            type InvalidEnum : Boolean enum {
+              True;
+              False;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ENUM_DEF,
+            CDSValidator.CODE_INVALID_ENUM_BASE);
+    }
+
+    @Test
+    public void warnOnEmptyEnum() throws Exception {
+        CdsFile file = parse("""
+            type EmptyEnum : String enum {
+            }
+            """);
+        validationHelper.assertWarning(file,
+            CdsPackage.Literals.ENUM_DEF,
+            CDSValidator.CODE_EMPTY_ENUM);
+    }
+
+    @Test
+    public void detectEnumValueTypeMismatch() throws Exception {
+        CdsFile file = parse("""
+            type Status : Integer enum {
+              Active = 'active';
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ENUM_VALUE,
+            CDSValidator.CODE_ENUM_VALUE_TYPE);
+    }
+
+    @Test
+    public void parseEnumReferenceInDefault() throws Exception {
+        CdsFile file = parse("""
+            type Color : String enum { Red; Green; Blue; }
+            entity Products {
+              ID    : Integer;
+              color : Color = #Red;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(1);
+        var colorElement = entity.getElements().get(1);
+        assertNotNull(colorElement.getDefaultValue());
+        assertTrue(colorElement.getDefaultValue() instanceof EnumRef);
+        EnumRef enumRef = (EnumRef) colorElement.getDefaultValue();
+        assertEquals("Red", enumRef.getValue().getName());
+    }
+
+    @Test
+    public void parseEnumReferenceWithExplicitValue() throws Exception {
+        CdsFile file = parse("""
+            type Priority : Integer enum {
+              Low = 1;
+              High = 10;
+            }
+            entity Tasks {
+              ID       : Integer;
+              priority : Priority = #High;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void detectUnresolvedEnumReference() throws Exception {
+        CdsFile file = parse("""
+            type Color : String enum { Red; Green; }
+            entity Products {
+              ID    : Integer;
+              color : Color = #Blue;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ENUM_REF,
+            CDSValidator.CODE_ENUM_REF_UNRESOLVED);
+    }
+
+    @Test
+    public void detectEnumReferenceOnNonEnumType() throws Exception {
+        CdsFile file = parse("""
+            entity Products {
+              ID    : Integer;
+              name  : String = #SomeValue;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ENUM_REF,
+            CDSValidator.CODE_ENUM_REF_WRONG_TYPE);
+    }
+
+    // ── Phase 7: Enum Inheritance ────────────────────────────────────────────
+
+    @Test
+    public void parseEnumInheritingFromString() throws Exception {
+        CdsFile file = parse("""
+            type Color : String enum { Red; Green; Blue; }
+            """);
+        validationHelper.assertNoErrors(file);
+        EnumDef enumDef = (EnumDef) file.getDefinitions().get(0);
+        assertEquals("String", enumDef.getSuperType().getName());
+    }
+
+    @Test
+    public void parseEnumInheritingFromInteger() throws Exception {
+        CdsFile file = parse("""
+            type Priority : Integer enum {
+              Low = 1;
+              High = 10;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EnumDef enumDef = (EnumDef) file.getDefinitions().get(0);
+        assertEquals("Integer", enumDef.getSuperType().getName());
+    }
+
+    @Test
+    public void parseEnumInheritingFromEnum() throws Exception {
+        CdsFile file = parse("""
+            type BaseStatus : String enum {
+              Active;
+              Inactive;
+            }
+            type ExtendedStatus : BaseStatus enum {
+              Pending;
+              Cancelled;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EnumDef base = (EnumDef) file.getDefinitions().get(0);
+        EnumDef extended = (EnumDef) file.getDefinitions().get(1);
+        assertEquals("BaseStatus", extended.getSuperType().getName());
+        assertTrue(extended.getSuperType() instanceof EnumDef);
+    }
+
+    @Test
+    public void detectCircularEnumInheritance() throws Exception {
+        CdsFile file = parse("""
+            type Status1 : Status2 enum { Value1; }
+            type Status2 : Status1 enum { Value2; }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ENUM_DEF,
+            CDSValidator.CODE_ENUM_CIRCULAR_INHERITANCE);
+    }
+
+    @Test
+    public void detectDuplicateInheritedEnumValue() throws Exception {
+        CdsFile file = parse("""
+            type BaseStatus : String enum {
+              Active;
+              Inactive;
+            }
+            type ExtendedStatus : BaseStatus enum {
+              Active;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ENUM_VALUE,
+            CDSValidator.CODE_ENUM_DUPLICATE_INHERITED);
+    }
+
+    @Test
+    public void allowEmptyEnumInheritingFromNonEmpty() throws Exception {
+        CdsFile file = parse("""
+            type BaseStatus : String enum {
+              Active;
+              Inactive;
+            }
+            type ExtendedStatus : BaseStatus enum {
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void validateInheritedEnumValueTypes() throws Exception {
+        CdsFile file = parse("""
+            type BaseStatus : Integer enum {
+              Active = 1;
+            }
+            type ExtendedStatus : BaseStatus enum {
+              Pending = 'pending';
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ENUM_VALUE,
+            CDSValidator.CODE_ENUM_VALUE_TYPE);
+    }
+
+    @Test
+    public void parseMultiLevelEnumInheritance() throws Exception {
+        CdsFile file = parse("""
+            type Level1 : String enum { A; }
+            type Level2 : Level1 enum { B; }
+            type Level3 : Level2 enum { C; }
+            """);
+        validationHelper.assertNoErrors(file);
+        EnumDef level3 = (EnumDef) file.getDefinitions().get(2);
+        assertEquals("Level2", level3.getSuperType().getName());
+    }
+
+    // ── Phase 8: Key Constraints ─────────────────────────────────────────────
+
+    @Test
+    public void parseSingleKeyElement() throws Exception {
+        CdsFile file = parse("""
+            entity Orders {
+              key ID: UUID;
+              customerName: String;
+            }
+            """);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        Element keyElement = entity.getElements().get(0);
+        assertEquals(ElementModifier.KEY, keyElement.getModifier());
+        assertEquals("ID", keyElement.getName());
+    }
+
+    @Test
+    public void parseCompositeKey() throws Exception {
+        CdsFile file = parse("""
+            entity OrderItems {
+              key orderID: UUID;
+              key lineNo: Integer;
+              description: String;
+            }
+            """);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        assertEquals(ElementModifier.KEY, entity.getElements().get(0).getModifier());
+        assertEquals(ElementModifier.KEY, entity.getElements().get(1).getModifier());
+        assertNull(entity.getElements().get(2).getModifier());
+    }
+
+    @Test
+    public void detectMissingKey() throws Exception {
+        CdsFile file = parse("""
+            entity NoKeys {
+              name: String;
+            }
+            """);
+        validationHelper.assertWarning(file,
+            CdsPackage.Literals.ENTITY_DEF,
+            CDSValidator.CODE_MISSING_KEY_ELEMENT);
+    }
+
+    @Test
+    public void detectKeyOnAssociation() throws Exception {
+        CdsFile file = parse("""
+            entity Partners { ID: Integer; }
+            entity Orders {
+              key partner: Association to Partners;
+            }
+            """);
+        validationHelper.assertWarning(file,
+            CdsPackage.Literals.ELEMENT,
+            CDSValidator.CODE_KEY_ON_ASSOCIATION);
+    }
+
+    // ── Phase 9: Constraints ─────────────────────────────────────────────────
+
+    @Test
+    public void parseNotNullConstraint() throws Exception {
+        CdsFile file = parse("""
+            entity Users {
+              key ID: UUID;
+              email: String not null;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        Element emailElement = entity.getElements().get(1);
+        assertTrue(emailElement.getConstraints().stream()
+            .anyMatch(c -> c instanceof NotNullConstraint));
+    }
+
+    @Test
+    public void parseUniqueConstraint() throws Exception {
+        CdsFile file = parse("""
+            entity Users {
+              key ID: UUID;
+              email: String unique;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void parseMultipleConstraints() throws Exception {
+        CdsFile file = parse("""
+            entity Users {
+              key ID: UUID;
+              email: String not null unique;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        Element emailElement = entity.getElements().get(1);
+        assertEquals(2, emailElement.getConstraints().size());
+    }
+
+    @Test
+    public void parseCheckConstraint() throws Exception {
+        CdsFile file = parse("""
+            entity Users {
+              key ID: UUID;
+              age: Integer check age >= 18;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        Element ageElement = entity.getElements().get(1);
+        assertNotNull(ageElement.getConstraints().stream()
+            .filter(c -> c instanceof CheckConstraint)
+            .findFirst().orElse(null));
+    }
+
+    @Test
+    public void parseDefaultValue() throws Exception {
+        CdsFile file = parse("""
+            entity Users {
+              key ID: UUID;
+              status: String default 'active';
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        Element statusElement = entity.getElements().get(1);
+        assertNotNull(statusElement.getDefaultValue());
+    }
+
+    @Test
+    public void parseConstraintsWithDefault() throws Exception {
+        CdsFile file = parse("""
+            entity Users {
+              key ID: UUID;
+              status: String default 'active' not null;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void detectNotNullOnAssociation() throws Exception {
+        CdsFile file = parse("""
+            entity Users { key ID: UUID; }
+            entity Orders {
+              key ID: UUID;
+              user: Association to Users not null;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ELEMENT,
+            CDSValidator.CODE_NOT_NULL_ON_ASSOCIATION);
+    }
+
+    @Test
+    public void detectUniqueOnAssociation() throws Exception {
+        CdsFile file = parse("""
+            entity Users { key ID: UUID; }
+            entity Orders {
+              key ID: UUID;
+              user: Association to Users unique;
+            }
+            """);
+        validationHelper.assertWarning(file,
+            CdsPackage.Literals.ELEMENT,
+            CDSValidator.CODE_UNIQUE_ON_ASSOCIATION);
+    }
+
+    @Test
+    public void parseComplexCheckConstraint() throws Exception {
+        CdsFile file = parse("""
+            entity Products {
+              key ID: UUID;
+              price: Decimal;
+              discount: Decimal check discount >= 0 and discount <= price;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void parseKeyWithConstraints() throws Exception {
+        CdsFile file = parse("""
+            entity Users {
+              key ID: UUID not null;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        Element idElement = entity.getElements().get(0);
+        assertEquals(ElementModifier.KEY, idElement.getModifier());
+        assertTrue(idElement.getConstraints().stream()
+            .anyMatch(c -> c instanceof NotNullConstraint));
+    }
+
+    // ── Phase 10: Virtual Elements ───────────────────────────────────────────
+
+    @Test
+    public void parseVirtualElement() throws Exception {
+        CdsFile file = parse("""
+            entity Products {
+              key ID: UUID;
+              price: Decimal;
+              virtual totalPrice: Decimal;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        Element virtualElement = entity.getElements().get(2);
+        assertEquals(ElementModifier.VIRTUAL, virtualElement.getModifier());
+        assertEquals("totalPrice", virtualElement.getName());
+    }
+
+    @Test
+    public void parseVirtualWithExpression() throws Exception {
+        CdsFile file = parse("""
+            entity Products {
+              key ID: UUID;
+              price: Decimal;
+              tax: Decimal;
+              virtual totalPrice: Decimal = price + tax;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        Element virtualElement = entity.getElements().get(3);
+        assertEquals(ElementModifier.VIRTUAL, virtualElement.getModifier());
+        assertNotNull(virtualElement.getDefaultValue());
+    }
+
+    @Test
+    public void parseMultipleVirtualElements() throws Exception {
+        CdsFile file = parse("""
+            entity Users {
+              key ID: UUID;
+              firstName: String;
+              lastName: String;
+              virtual fullName: String;
+              virtual displayName: String;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        long virtualCount = entity.getElements().stream()
+            .filter(e -> e.getModifier() == ElementModifier.VIRTUAL)
+            .count();
+        assertEquals(2, virtualCount);
+    }
+
+    @Test
+    public void detectVirtualOnAssociation() throws Exception {
+        CdsFile file = parse("""
+            entity Books { key ID: UUID; }
+            entity Orders {
+              key ID: UUID;
+              virtual book: Association to Books;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ELEMENT,
+            CDSValidator.CODE_VIRTUAL_ON_ASSOCIATION);
+    }
+
+    @Test
+    public void detectVirtualWithoutType() throws Exception {
+        CdsFile file = parse("""
+            entity Products {
+              key ID: UUID;
+              virtual computed;
+            }
+            """);
+        // This will fail to parse because no type is provided
+        // The parser expects a type after the colon
+    }
+
+    @Test
+    public void parseVirtualWithConstraints() throws Exception {
+        CdsFile file = parse("""
+            entity Users {
+              key ID: UUID;
+              virtual fullName: String not null;
+            }
+            """);
+        // Should parse but produce warning
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        Element virtualElement = entity.getElements().get(1);
+        assertEquals(ElementModifier.VIRTUAL, virtualElement.getModifier());
+        assertTrue(virtualElement.getConstraints().stream()
+            .anyMatch(c -> c instanceof NotNullConstraint));
+    }
+
+    @Test
+    public void cannotBeKeyAndVirtual() throws Exception {
+        // This should fail to parse because modifier can only be one value
+        CdsFile file = parseHelper.parse("""
+            entity Products {
+              key virtual ID: UUID;
+            }
+            """);
+        assertNotNull(file);
+        assertFalse(file.eResource().getErrors().isEmpty(),
+            "Should have parse errors");
+    }
+
+    @Test
+    public void parseVirtualWithDefault() throws Exception {
+        CdsFile file = parse("""
+            entity Products {
+              key ID: UUID;
+              virtual status: String default 'Available';
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        Element virtualElement = entity.getElements().get(1);
+        assertEquals(ElementModifier.VIRTUAL, virtualElement.getModifier());
+        assertNotNull(virtualElement.getDefaultValue());
+    }
+
+    @Test
+    public void parseVirtualInService() throws Exception {
+        CdsFile file = parse("""
+            entity Books {
+              key ID: UUID;
+              title: String;
+              virtual rating: Decimal;
+            }
+
+            service CatalogService {
+              entity Books as projection on Books {
+                ID, title, rating
+              }
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── Phase 11: Localized Data ─────────────────────────────────────────────
+
+    @Test
+    public void parseLocalizedElement() throws Exception {
+        CdsFile file = parse("""
+            entity Products {
+              key ID: UUID;
+              localized name: String(100);
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        Element nameElement = entity.getElements().get(1);
+        assertEquals(ElementModifier.LOCALIZED, nameElement.getModifier());
+        assertEquals("name", nameElement.getName());
+    }
+
+    @Test
+    public void parseMultipleLocalizedElements() throws Exception {
+        CdsFile file = parse("""
+            entity Products {
+              key ID: UUID;
+              localized name: String(100);
+              localized description: String(1000);
+              price: Decimal;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        long localizedCount = entity.getElements().stream()
+            .filter(e -> e.getModifier() == ElementModifier.LOCALIZED)
+            .count();
+        assertEquals(2, localizedCount);
+    }
+
+    @Test
+    public void parseLocalizedWithConstraints() throws Exception {
+        CdsFile file = parse("""
+            entity Products {
+              key ID: UUID;
+              localized name: String(100) not null;
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        Element nameElement = entity.getElements().get(1);
+        assertEquals(ElementModifier.LOCALIZED, nameElement.getModifier());
+        assertTrue(nameElement.getConstraints().stream()
+            .anyMatch(c -> c instanceof NotNullConstraint));
+    }
+
+    @Test
+    public void detectLocalizedOnAssociation() throws Exception {
+        CdsFile file = parse("""
+            entity Categories { key ID: UUID; }
+            entity Products {
+              key ID: UUID;
+              localized category: Association to Categories;
+            }
+            """);
+        validationHelper.assertError(file,
+            CdsPackage.Literals.ELEMENT,
+            CDSValidator.CODE_LOCALIZED_ON_ASSOCIATION);
+    }
+
+    @Test
+    public void warnLocalizedOnNonString() throws Exception {
+        CdsFile file = parse("""
+            entity Products {
+              key ID: UUID;
+              localized price: Decimal;
+            }
+            """);
+        validationHelper.assertWarning(file,
+            CdsPackage.Literals.ELEMENT,
+            CDSValidator.CODE_LOCALIZED_ON_NON_STRING);
+    }
+
+    @Test
+    public void cannotBeKeyAndLocalized() throws Exception {
+        // This should fail to parse because modifier can only be one value
+        CdsFile file = parseHelper.parse("""
+            entity Products {
+              key localized name: String;
+            }
+            """);
+        assertNotNull(file);
+        assertFalse(file.eResource().getErrors().isEmpty(),
+            "Should have parse errors");
+    }
+
+    @Test
+    public void cannotBeVirtualAndLocalized() throws Exception {
+        // This should fail to parse because modifier can only be one value
+        CdsFile file = parseHelper.parse("""
+            entity Products {
+              virtual localized name: String;
+            }
+            """);
+        assertNotNull(file);
+        assertFalse(file.eResource().getErrors().isEmpty(),
+            "Should have parse errors");
+    }
+
+    @Test
+    public void parseLocalizedInService() throws Exception {
+        CdsFile file = parse("""
+            entity Products {
+              key ID: UUID;
+              localized name: String;
+              price: Decimal;
+            }
+
+            service CatalogService {
+              entity Products as projection on Products {
+                ID, name, price
+              }
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void parseLocalizedWithDefault() throws Exception {
+        CdsFile file = parse("""
+            entity Products {
+              key ID: UUID;
+              localized name: String default 'Unknown';
+            }
+            """);
+        // Default values on localized fields are allowed but unusual
+        validationHelper.assertNoErrors(file);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+        Element nameElement = entity.getElements().get(1);
+        assertEquals(ElementModifier.LOCALIZED, nameElement.getModifier());
+        assertNotNull(nameElement.getDefaultValue());
+    }
+
+    @Test
+    public void parseRealWorldLocalizedExample() throws Exception {
+        CdsFile file = parse("""
+            entity Books {
+              key ID: UUID;
+              localized title: String(200) not null;
+              localized description: LargeString;
+              author: String(100);
+              price: Decimal(9,2);
+              isbn: String(13) unique;
+            }
+
+            service CatalogService {
+              entity Books as projection on Books {
+                ID, title, description, author, price
+              }
+            }
+            """);
+        validationHelper.assertNoErrors(file);
+        EntityDef entity = (EntityDef) file.getDefinitions().get(0);
+
+        // Verify title is localized
+        Element titleElement = entity.getElements().get(1);
+        assertEquals("title", titleElement.getName());
+        assertEquals(ElementModifier.LOCALIZED, titleElement.getModifier());
+
+        // Verify description is localized
+        Element descElement = entity.getElements().get(2);
+        assertEquals("description", descElement.getName());
+        assertEquals(ElementModifier.LOCALIZED, descElement.getModifier());
+
+        // Verify author is NOT localized
+        Element authorElement = entity.getElements().get(3);
+        assertEquals("author", authorElement.getName());
+        assertNull(authorElement.getModifier());
+    }
+
+    // ── Helper ───────────────────────────────────────────────────────────────
+
+    private CdsFile parse(String src) throws Exception {
+        CdsFile file = parseHelper.parse(src);
+        assertNotNull(file);
+        assertTrue(file.eResource().getErrors().isEmpty(),
+            "Parse errors: " + file.eResource().getErrors());
+        return file;
+    }
+}

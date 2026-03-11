@@ -1,0 +1,13 @@
+grammar org.example.cds.CDS with org.eclipse.xtext.common.Terminals
+
+generate cDS "http://www.example.org/cds/CDS"
+
+// Minimal grammar for testing
+CdsFile:
+    definitions+=Definition*;
+
+Definition:
+    EntityDef;
+
+EntityDef:
+    'entity' name=ID '{' '}';

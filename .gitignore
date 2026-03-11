@@ -1,0 +1,77 @@
+# Maven/Tycho build artifacts
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Eclipse/Xtext generated files
+**/src-gen/**
+**/xtend-gen/**
+**/.settings/
+**/.project
+**/.classpath
+**/.metadata/
+**/.recommenders/
+**/bin/
+**/tmp/
+*.tmp
+*.bak
+*.swp
+*~.nib
+local.properties
+.loadpath
+.factorypath
+
+# P2 repositories
+**/repository/content.xml
+**/repository/artifacts.xml
+
+# Tycho build qualifier cache
+**/.tycho-consumer-pom.xml
+
+# Test output
+**/work/
+**/target-platforms/
+surefire-reports/
+*.log
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE specific
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Temporary files
+/tmp/
+*.class
+*.jar
+!plugins/*/lib/*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Claude/AI assistant temporary files
+.claude/
+
+# Keep example and documentation files
+!examples/**
+!docs/**
+!*.md

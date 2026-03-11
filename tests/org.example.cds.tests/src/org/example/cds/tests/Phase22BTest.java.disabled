@@ -1,0 +1,447 @@
+package org.example.cds.tests;
+
+import org.eclipse.xtext.testing.InjectWith;
+import org.eclipse.xtext.testing.extensions.InjectionExtension;
+import org.eclipse.xtext.testing.util.ParseHelper;
+import org.eclipse.xtext.testing.validation.ValidationTestHelper;
+import org.example.cds.cDS.CdsFile;
+import org.example.cds.cDS.CdsPackage;
+import org.example.cds.validation.CDSValidator;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import com.google.inject.Inject;
+
+/**
+ * Phase 22B: Advanced Projection Tests for CASE, CAST, and excluding
+ */
+@ExtendWith(InjectionExtension.class)
+@InjectWith(CDSInjectorProvider.class)
+public class Phase22BTest {
+
+    @Inject
+    private ParseHelper<CdsFile> parseHelper;
+
+    @Inject
+    private ValidationTestHelper validationHelper;
+
+    // ── CASE Expression Tests ───────────────────────────────────────────────
+
+    @Test
+    public void testValidSimpleCaseExpression() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; price: Decimal; }
+
+            entity BookView as SELECT from Books {
+              CASE
+                WHEN price < 10 THEN 'Budget'
+                WHEN price < 30 THEN 'Standard'
+                ELSE 'Premium'
+              END as priceCategory
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testCaseExpressionWithoutElse() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Orders { key ID: UUID; status: String; }
+
+            entity OrderView as SELECT from Orders {
+              CASE
+                WHEN status = 'pending' THEN 'Awaiting'
+                WHEN status = 'shipped' THEN 'On the way'
+              END as displayStatus
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testNestedCaseExpression() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Products { key ID: UUID; price: Decimal; rating: Decimal; }
+
+            entity ProductView as SELECT from Products {
+              CASE
+                WHEN rating >= 4.5 THEN 'Excellent'
+                WHEN rating >= 3.5 THEN
+                  CASE
+                    WHEN price < 20 THEN 'Good Value'
+                    ELSE 'Good'
+                  END
+                ELSE 'Average'
+              END as quality
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testCaseExpressionWithNumericResults() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Items { key ID: UUID; stock: Integer; }
+
+            entity ItemView as SELECT from Items {
+              CASE
+                WHEN stock = 0 THEN 0
+                WHEN stock < 10 THEN 1
+                WHEN stock < 50 THEN 2
+                ELSE 3
+              END as stockLevel
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testEmptyCaseExpression() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; }
+
+            entity BookView as SELECT from Books {
+              CASE
+              END as invalid
+            };
+            """);
+
+        validationHelper.assertError(file,
+            CdsPackage.Literals.CASE_EXPR,
+            CDSValidator.CODE_CASE_EMPTY);
+    }
+
+    @Test
+    public void testCaseExpressionTypeMismatch() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Products { key ID: UUID; price: Decimal; }
+
+            entity ProductView as SELECT from Products {
+              CASE
+                WHEN price < 10 THEN 'Budget'
+                WHEN price < 30 THEN 25
+                ELSE 'Premium'
+              END as mixed
+            };
+            """);
+
+        validationHelper.assertWarning(file,
+            null,
+            CDSValidator.CODE_CASE_TYPE_MISMATCH);
+    }
+
+    @Test
+    public void testCaseInWhereClause() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; price: Decimal; stock: Integer; }
+
+            entity ExpensiveBooks as SELECT from Books {
+              title: String;
+            } where CASE
+              WHEN stock > 100 THEN price > 20
+              ELSE price > 30
+            END;
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── CAST Expression Tests ───────────────────────────────────────────────
+
+    @Test
+    public void testValidCastToInteger() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Products { key ID: UUID; price: Decimal; }
+
+            entity ProductView as SELECT from Products {
+              CAST(price AS Integer) as priceInt
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testValidCastToString() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Orders { key ID: UUID; quantity: Integer; }
+
+            entity OrderView as SELECT from Orders {
+              CAST(quantity AS String) as quantityText
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testValidCastToDecimal() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Items { key ID: UUID; rating: Decimal; }
+
+            entity ItemView as SELECT from Items {
+              CAST(rating AS Decimal(5, 3)) as preciseRating
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testCastWithFunctions() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Orders { key ID: UUID; quantity: Integer; }
+
+            entity OrderView as SELECT from Orders {
+              CONCAT('Qty: ', CAST(quantity AS String)) as displayText
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testCastWithCase() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Products { key ID: UUID; price: Decimal; }
+
+            entity ProductView as SELECT from Products {
+              CASE
+                WHEN price < 10 THEN CAST(price AS String)
+                ELSE CONCAT('$', CAST(price AS String))
+              END as displayPrice
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testMultipleCastOperations() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Orders { key ID: UUID; totalAmount: Decimal; }
+
+            entity OrderView as SELECT from Orders {
+              CAST(totalAmount AS Integer) as amountRounded,
+              CAST(totalAmount AS String) as amountText
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    // ── excluding Clause Tests ──────────────────────────────────────────────
+
+    @Test
+    public void testValidExcludingClause() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books {
+              key ID: UUID;
+              title: String;
+              internalNotes: String;
+              draft: Boolean;
+            }
+
+            entity PublicBooks as SELECT from Books {
+              * excluding { internalNotes, draft }
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testExcludingSingleField() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Products {
+              key ID: UUID;
+              name: String;
+              internalCode: String;
+            }
+
+            entity PublicProducts as SELECT from Products {
+              * excluding { internalCode }
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testExcludingWithAdditionalColumns() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books {
+              key ID: UUID;
+              title: String;
+              draft: Boolean;
+            }
+
+            entity BookView as SELECT from Books {
+              * excluding { draft },
+              UPPER(title) as titleUpper
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testExcludingWithoutSelectAll() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books {
+              key ID: UUID;
+              title: String;
+              draft: Boolean;
+            }
+
+            entity BookView as SELECT from Books {
+              title,
+              draft
+            } excluding { draft };
+            """);
+
+        validationHelper.assertWarning(file,
+            null,
+            CDSValidator.CODE_EXCLUDING_WITH_COLUMNS);
+    }
+
+    // ── Combined Features Tests ─────────────────────────────────────────────
+
+    @Test
+    public void testCaseWithFunctions() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; title: String; price: Decimal; }
+
+            entity BookView as SELECT from Books {
+              CASE
+                WHEN price < 10 THEN CONCAT('Budget: ', UPPER(title))
+                WHEN price < 30 THEN CONCAT('Standard: ', title)
+                ELSE CONCAT('Premium: ', LOWER(title))
+              END as displayTitle
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testComplexCombination() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Products {
+              key ID: UUID;
+              name: String;
+              price: Decimal;
+              stock: Integer;
+              rating: Decimal;
+              internalNotes: String;
+            }
+
+            entity ProductAnalysis as SELECT from Products {
+              * excluding { internalNotes },
+              UPPER(SUBSTRING(name, 1, 1)) as firstLetter,
+              CASE
+                WHEN stock = 0 THEN 'Out of Stock'
+                WHEN stock < 10 THEN 'Low Stock'
+                ELSE 'Available'
+              END as availability,
+              CAST(rating AS Integer) as ratingStars,
+              ROUND(price * 0.9, 2) as salePrice
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testNestedCaseWithCast() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Orders { key ID: UUID; totalAmount: Decimal; status: String; }
+
+            entity OrderPriority as SELECT from Orders {
+              CASE
+                WHEN CAST(totalAmount AS Integer) > 1000 THEN
+                  CASE
+                    WHEN status = 'pending' THEN 'High Priority'
+                    ELSE 'High Value'
+                  END
+                WHEN CAST(totalAmount AS Integer) > 500 THEN 'Medium'
+                ELSE 'Standard'
+              END as priority
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+
+    @Test
+    public void testMultipleCaseExpressions() throws Exception {
+        CdsFile file = parseHelper.parse("""
+            namespace test;
+
+            entity Books { key ID: UUID; price: Decimal; rating: Decimal; stock: Integer; }
+
+            entity BookClassification as SELECT from Books {
+              CASE
+                WHEN price < 15 THEN 'Economy'
+                WHEN price < 30 THEN 'Standard'
+                ELSE 'Premium'
+              END as priceClass,
+              CASE
+                WHEN rating >= 4.5 THEN 'Excellent'
+                WHEN rating >= 3.5 THEN 'Good'
+                ELSE 'Average'
+              END as ratingClass,
+              CASE
+                WHEN stock > 50 THEN 'High'
+                WHEN stock > 10 THEN 'Medium'
+                ELSE 'Low'
+              END as stockClass
+            };
+            """);
+
+        validationHelper.assertNoErrors(file);
+    }
+}

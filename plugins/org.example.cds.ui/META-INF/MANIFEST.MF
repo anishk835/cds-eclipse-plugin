@@ -1,0 +1,23 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: CDS Editor UI
+Bundle-SymbolicName: org.example.cds.ui;singleton:=true
+Bundle-Version: 1.0.0.qualifier
+Bundle-RequiredExecutionEnvironment: JavaSE-17
+Bundle-ActivationPolicy: lazy
+Bundle-Activator: org.example.cds.ui.internal.CdsActivator
+Require-Bundle: org.example.cds,
+ org.example.cds.ide,
+ org.eclipse.xtext.ui,
+ org.eclipse.xtext.ui.shared,
+ org.eclipse.ui.ide,
+ org.eclipse.ui,
+ org.apache.log4j,
+ org.eclipse.xtext.builder,
+ org.eclipse.xtext.ui.codetemplates.ui,
+ org.eclipse.compare
+Export-Package: org.example.cds.ui.outline,
+ org.example.cds.ui.contentassist,
+ org.example.cds.ui.hover,
+ org.example.cds.ui.labelprovider,
+ org.example.cds.ui.internal;x-internal:=true

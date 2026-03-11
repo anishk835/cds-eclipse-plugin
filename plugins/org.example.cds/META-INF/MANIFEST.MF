@@ -1,0 +1,22 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: CDS Language Core
+Bundle-SymbolicName: org.example.cds;singleton:=true
+Bundle-Version: 1.0.0.qualifier
+Bundle-RequiredExecutionEnvironment: JavaSE-17
+Require-Bundle: org.eclipse.xtext,
+ org.eclipse.xtext.util,
+ org.eclipse.emf.ecore,
+ org.eclipse.emf.common
+Export-Package: org.example.cds,
+ org.example.cds.cDS,
+ org.example.cds.scoping,
+ org.example.cds.validation,
+ org.example.cds.formatting,
+ org.example.cds.typing,
+ org.example.cds.annotations,
+ org.example.cds.projections,
+ org.example.cds.services,
+ org.example.cds.parser.antlr,
+ org.example.cds.parser.antlr.internal,
+ org.example.cds.serializer
