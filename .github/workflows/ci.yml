@@ -33,15 +33,15 @@ jobs:
       - name: Run MWE2 Code Generation
         run: |
           mvn --batch-mode \
-              -f plugins/org.example.cds/pom.xml \
               generate-sources \
+              -pl plugins/org.example.cds \
+              -am \
               -Dmaven.test.skip=true
 
       - name: Build and Test (Tycho)
         run: |
           mvn --batch-mode \
               clean verify \
-              -Dtycho.mode=maven \
               -Dmaven.test.failure.ignore=false
 
       - name: Publish Test Results
