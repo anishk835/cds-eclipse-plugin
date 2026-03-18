@@ -30,12 +30,18 @@ import com.google.inject.Inject;
  * Custom scope provider for CDS cross-references.
  *
  * Handles:
- *   - TypeRef.ref           → all visible Definitions (entity, type, aspect, built-ins)
- *   - AssocDef.target       → EntityDef only
- *   - ServiceEntity.source  → EntityDef only
- *   - ProjectedElement.ref  → Elements within the source entity
- *   - ExtendDef.target      → EntityDef only
- *   - AnnotateDef.target    → all Definitions
+ *   - TypeRef.ref              → all visible Definitions (entity, type, aspect, built-ins)
+ *   - AssocDef.target          → EntityDef only
+ *   - ServiceEntity.source     → EntityDef only
+ *   - SelectQuery.from         → EntityDef and ViewDef (for SELECT FROM navigation)
+ *   - JoinClause.target        → EntityDef and ViewDef (for JOIN navigation)
+ *   - TypeDef.projectionSource → EntityDef, TypeDef, ViewDef (for type-as-projection)
+ *   - TypeProjectionField.ref  → Elements within the projection source
+ *   - ProjectedElement.ref     → Elements within the source entity
+ *   - RefExpr.ref              → Elements in local scope
+ *   - ExtendDef.target         → EntityDef only
+ *   - AnnotateDef.target       → all Definitions
+ *   - EnumDef.superType        → EnumDef and built-in types
  */
 public class CDSScopeProvider extends AbstractCDSScopeProvider {
 
@@ -56,7 +62,7 @@ public class CDSScopeProvider extends AbstractCDSScopeProvider {
             return scopeForDefinitions(context, EntityDef.class);
         }
 
-        if (reference == CDSPackage.Literals.SERVICE_ENTITY__SOURCE) {
+        if (reference == CDSPackage.Literals.SERVICE_ENTITY_BODY__SOURCE) {
             return scopeForDefinitions(context, EntityDef.class);
         }
 
@@ -75,6 +81,37 @@ public class CDSScopeProvider extends AbstractCDSScopeProvider {
 
         if (reference == CDSPackage.Literals.REF_EXPR__REF) {
             return scopeForLocalElements(context);
+        }
+
+        // Navigation for SELECT FROM queries
+        if (reference == CDSPackage.Literals.SELECT_QUERY__FROM) {
+            return scopeForDefinitions(context, EntityDef.class, ViewDef.class);
+        }
+
+        // Navigation for JOIN clauses
+        if (reference == CDSPackage.Literals.JOIN_CLAUSE__TARGET) {
+            return scopeForDefinitions(context, EntityDef.class, ViewDef.class);
+        }
+
+        // Navigation for type-as-projection syntax
+        if (reference == CDSPackage.Literals.TYPE_DEF__PROJECTION_SOURCE) {
+            return scopeForDefinitions(context,
+                EntityDef.class, TypeDef.class, ViewDef.class);
+        }
+
+        // Navigation for projected fields in type-as-projection
+        if (reference == CDSPackage.Literals.TYPE_PROJECTION_FIELD__REF) {
+            return scopeForTypeProjectionFields(context);
+        }
+
+        // Navigation for "redirected to" in SELECT columns (service entities)
+        if (reference == CDSPackage.Literals.SELECT_COLUMN__REDIRECT_TARGET) {
+            return scopeForRedirectedEntities(context);
+        }
+
+        // Navigation for "redirected to" in SELECT fields (service entity body)
+        if (reference == CDSPackage.Literals.SELECT_FIELD__TARGET) {
+            return scopeForRedirectedEntities(context);
         }
 
         // TODO: EnumRef type doesn't exist in generated AST
@@ -154,11 +191,12 @@ public class CDSScopeProvider extends AbstractCDSScopeProvider {
     private IScope scopeForProjectedElements(EObject context) {
         var serviceEntity = EcoreUtil2.getContainerOfType(
             context, org.example.cds.cDS.ServiceEntity.class);
-        if (serviceEntity == null || serviceEntity.getSource() == null
-                || serviceEntity.getSource().eIsProxy()) {
+        if (serviceEntity == null || serviceEntity.getEntityBody() == null
+                || serviceEntity.getEntityBody().getSource() == null
+                || serviceEntity.getEntityBody().getSource().eIsProxy()) {
             return IScope.NULLSCOPE;
         }
-        List<Element> elements = getElements(serviceEntity.getSource());
+        List<Element> elements = getElements(serviceEntity.getEntityBody().getSource());
         return Scopes.scopeFor(elements);
     }
 
@@ -210,5 +248,65 @@ public class CDSScopeProvider extends AbstractCDSScopeProvider {
     private IScope scopeForEnumSuperType(EObject context) {
         // Include built-in types and other enum definitions
         return scopeForDefinitions(context, EnumDef.class);
+    }
+
+    /**
+     * Scope for type projection fields (type-as-projection).
+     * Returns elements from the projection source entity/type.
+     */
+    private IScope scopeForTypeProjectionFields(EObject context) {
+        TypeDef typeDef = EcoreUtil2.getContainerOfType(context, TypeDef.class);
+        if (typeDef == null || typeDef.getProjectionSource() == null
+                || typeDef.getProjectionSource().eIsProxy()) {
+            return IScope.NULLSCOPE;
+        }
+
+        Definition source = typeDef.getProjectionSource();
+
+        // If source is an EntityDef, return its elements
+        if (source instanceof EntityDef entity) {
+            return Scopes.scopeFor(getElements(entity));
+        }
+
+        // If source is a TypeDef with structured type, return its elements
+        if (source instanceof TypeDef sourceType && sourceType.getType() != null) {
+            TypeRef typeRef = sourceType.getType();
+            if (typeRef instanceof org.example.cds.cDS.StructuredTypeRef structType) {
+                return Scopes.scopeFor(structType.getElements());
+            }
+        }
+
+        return IScope.NULLSCOPE;
+    }
+
+    /**
+     * Scope for "redirected to" targets in SELECT columns.
+     * Provides both:
+     * - Service entities within the same service
+     * - Global entity definitions (EntityDef, ViewDef)
+     */
+    private IScope scopeForRedirectedEntities(EObject context) {
+        List<EObject> targets = new ArrayList<>();
+
+        // Find containing service
+        ServiceDef service = EcoreUtil2.getContainerOfType(context, ServiceDef.class);
+        if (service != null) {
+            // Add all service entities from the same service
+            targets.addAll(service.getMembers().stream()
+                .filter(m -> m instanceof org.example.cds.cDS.ServiceEntity)
+                .toList());
+        }
+
+        // Add global entity and view definitions
+        CdsFile file = EcoreUtil2.getContainerOfType(context, CdsFile.class);
+        if (file != null) {
+            for (Definition def : file.getDefinitions()) {
+                if (def instanceof EntityDef || def instanceof ViewDef) {
+                    targets.add(def);
+                }
+            }
+        }
+
+        return Scopes.scopeFor(targets);
     }
 }

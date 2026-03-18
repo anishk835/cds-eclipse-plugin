@@ -431,4 +431,59 @@
 			type="text">
 		</fileTypes>
 	</extension>
+
+	<!-- Find References Command -->
+	<extension point="org.eclipse.ui.commands">
+		<command
+			id="org.example.cds.ui.findReferences"
+			name="Find References"
+			description="Find all references to the selected CDS element"
+			categoryId="org.eclipse.ui.category.navigate">
+		</command>
+	</extension>
+
+	<!-- Find References Handler -->
+	<extension point="org.eclipse.ui.handlers">
+		<handler
+			class="org.example.cds.ui.CDSExecutableExtensionFactory:org.example.cds.ui.search.FindReferencesHandler"
+			commandId="org.example.cds.ui.findReferences">
+			<activeWhen>
+				<reference definitionId="org.example.cds.CDS.Editor.opened"/>
+			</activeWhen>
+		</handler>
+	</extension>
+
+	<!-- Find References Key Binding (Ctrl+Shift+G) -->
+	<extension point="org.eclipse.ui.bindings">
+		<key
+			commandId="org.example.cds.ui.findReferences"
+			schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"
+			contextId="org.example.cds.CDS.Editor.opened"
+			sequence="M1+M2+G">
+		</key>
+	</extension>
+
+	<!-- Find References Context Menu -->
+	<extension point="org.eclipse.ui.menus">
+		<menuContribution locationURI="popup:#TextEditorContext?after=group.find">
+			<command
+				commandId="org.example.cds.ui.findReferences"
+				label="Find References"
+				style="push">
+				<visibleWhen checkEnabled="false">
+					<reference definitionId="org.example.cds.CDS.Editor.opened"/>
+				</visibleWhen>
+			</command>
+		</menuContribution>
+	</extension>
+
+	<!-- Search Result Page -->
+	<extension point="org.eclipse.search.searchResultViewPages">
+		<viewPage
+			id="org.example.cds.ui.search.CDSSearchResultPage"
+			searchResultClass="org.example.cds.ui.search.CDSSearchResult"
+			class="org.example.cds.ui.CDSExecutableExtensionFactory:org.example.cds.ui.search.CDSSearchResultPage">
+		</viewPage>
+	</extension>
+
 </plugin>

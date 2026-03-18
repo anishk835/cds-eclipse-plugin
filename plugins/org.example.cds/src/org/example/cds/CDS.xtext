@@ -16,7 +16,14 @@ NamespaceDecl:
     'namespace' name=QualifiedName ';';
 
 UsingDecl:
-    'using' importedNamespace=QualifiedNameWithWildCard ';';
+    'using'
+    ('{' imports+=NamespaceImport (',' imports+=NamespaceImport)* '}'
+    | importedNamespace=QualifiedNameWithWildCard)
+    ('from' fromPath=STRING)?
+    ';';
+
+NamespaceImport:
+    namespace=QualifiedName ('as' alias=ID)?;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Top-level definitions
@@ -63,7 +70,7 @@ SelectQuery:
     'SELECT' ('from' from=[Definition|QualifiedName])?
     '{'
         (selectAll?='*' (excluding=ExcludingClause)?)?
-        columns+=SelectColumn (',' columns+=SelectColumn)*
+        ((',' columns+=SelectColumn) | (columns+=SelectColumn (',' columns+=SelectColumn)*))?
     '}'
     (joins+=JoinClause)*
     ('where' where=Expression)?
@@ -72,7 +79,9 @@ SelectQuery:
     (union=UnionClause)?;
 
 SelectColumn:
-    (expression=Expression 'as')? alias=ID;
+    (key?='key')?
+    (expression=Expression ('as' alias=ID)?
+    | alias=ID (':' (redirected?='redirected' 'to')? redirectTarget=[ecore::EObject|QualifiedName])?);
 
 // Phase 22B: excluding clause
 ExcludingClause:
@@ -163,12 +172,18 @@ ServiceMember returns ecore::EObject:
 
 ServiceEntity:
     annotations+=Annotation*
-    'entity' name=ID 'as' 'projection' 'on'
-    source=[EntityDef|QualifiedName]
+    'entity' name=ID 'as'
+    (entityBody=ServiceEntityBody | query=SelectQuery);
+
+ServiceEntityBody:
+    'projection' 'on' source=[EntityDef|QualifiedName]
     ('{' projectedElements+=ProjectedElement* '}')?;
 
 ProjectedElement:
-    ref=[Element|ID] ','?;
+    (ref=[Element|ID] | selectField=SelectField) ','?;
+
+SelectField:
+    name=ID (':' (redirected?='redirected' 'to')? target=[ecore::EObject|QualifiedName])?;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Actions & Functions  (Phase 13)

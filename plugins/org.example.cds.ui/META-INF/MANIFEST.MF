@@ -15,9 +15,11 @@ Require-Bundle: org.example.cds,
  org.apache.log4j,
  org.eclipse.xtext.builder,
  org.eclipse.xtext.ui.codetemplates.ui,
- org.eclipse.compare
+ org.eclipse.compare,
+ org.eclipse.search
 Export-Package: org.example.cds.ui.outline,
  org.example.cds.ui.contentassist,
  org.example.cds.ui.hover,
  org.example.cds.ui.labelprovider,
+ org.example.cds.ui.search,
  org.example.cds.ui.internal;x-internal:=true

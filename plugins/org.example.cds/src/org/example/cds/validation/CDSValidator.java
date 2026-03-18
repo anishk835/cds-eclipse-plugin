@@ -11,6 +11,7 @@ import java.util.Spliterators;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
+import org.eclipse.emf.ecore.EStructuralFeature;
 import org.eclipse.xtext.validation.Check;
 import org.eclipse.xtext.validation.CheckType;
 import org.eclipse.xtext.validation.ComposedChecks;
@@ -55,6 +56,7 @@ import org.example.cds.cDS.SelectColumn;
 import org.example.cds.cDS.SelectQuery;
 import org.example.cds.cDS.ServiceDef;
 import org.example.cds.cDS.ServiceEntity;
+import org.example.cds.cDS.ServiceEntityBody;
 import org.example.cds.cDS.SimpleTypeRef;
 import org.example.cds.cDS.TypeDef;
 import org.example.cds.cDS.TypeRef;
@@ -244,6 +246,19 @@ public class CDSValidator extends AbstractCDSValidator {
     }
 
     /**
+     * Gets the appropriate name feature for a definition type.
+     */
+    private EStructuralFeature getNameFeature(Definition def) {
+        if (def instanceof EntityDef) return CDSPackage.Literals.ENTITY_DEF__NAME;
+        if (def instanceof TypeDef) return CDSPackage.Literals.TYPE_DEF__NAME;
+        if (def instanceof EnumDef) return CDSPackage.Literals.ENUM_DEF__NAME;
+        if (def instanceof AspectDef) return CDSPackage.Literals.ASPECT_DEF__NAME;
+        if (def instanceof ServiceDef) return CDSPackage.Literals.SERVICE_DEF__NAME;
+        if (def instanceof ViewDef) return CDSPackage.Literals.VIEW_DEF__NAME;
+        return null;
+    }
+
+    /**
      * Gets the namespace from a CDS file.
      */
     private String getNamespace(CdsFile file) {
@@ -363,20 +378,23 @@ public class CDSValidator extends AbstractCDSValidator {
      */
     @Check(CheckType.NORMAL)
     public void checkProjectedElementsExist(ServiceEntity serviceEntity) {
-        if (serviceEntity.getSource() == null
-                || serviceEntity.getSource().eIsProxy()) return;
+        // ServiceEntity can have either entityBody (projection) or query (SELECT)
+        ServiceEntityBody entityBody = serviceEntity.getEntityBody();
+        if (entityBody == null) return; // It's a SELECT query, not a projection
 
-        Set<String> available = getElements(serviceEntity.getSource())
+        if (entityBody.getSource() == null || entityBody.getSource().eIsProxy()) return;
+
+        Set<String> available = getElements(entityBody.getSource())
             .stream()
             .map(Element::getName)
             .collect(Collectors.toSet());
 
-        for (ProjectedElement pe : serviceEntity.getProjectedElements()) {
+        for (ProjectedElement pe : entityBody.getProjectedElements()) {
             if (pe.getRef() == null) continue;
             String refName = pe.getRef().getName();
             if (refName != null && !available.contains(refName)) {
                 warning("Element '" + refName + "' not found in source entity '"
-                        + serviceEntity.getSource().getName() + "'",
+                        + entityBody.getSource().getName() + "'",
                     pe,
                     CDSPackage.Literals.PROJECTED_ELEMENT__REF,
                     CODE_MISSING_PROJ_ELEMENT);
@@ -1619,11 +1637,15 @@ public class CDSValidator extends AbstractCDSValidator {
                     // This is just an informational hint, not an error
                     String fullName = declaredNamespace + "." + defName;
                     if (!defName.equals(fullName) && !defName.startsWith(declaredNamespace + ".")) {
-                        info("Definition '" + defName + "' uses short name. " +
-                             "Fully qualified name would be: '" + fullName + "'",
-                            def,
-                            CDSPackage.Literals.ENTITY_DEF__NAME,  // Use specific subtype literal
-                            CODE_NAMESPACE_HINT);
+                        // Use the appropriate feature literal based on the definition type
+                        EStructuralFeature nameFeature = getNameFeature(def);
+                        if (nameFeature != null) {
+                            info("Definition '" + defName + "' uses short name. " +
+                                 "Fully qualified name would be: '" + fullName + "'",
+                                def,
+                                nameFeature,
+                                CODE_NAMESPACE_HINT);
+                        }
                     }
                 }
             }

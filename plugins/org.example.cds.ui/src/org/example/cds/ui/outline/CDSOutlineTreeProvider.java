@@ -114,7 +114,8 @@ public class CDSOutlineTreeProvider extends DefaultOutlineTreeProvider {
     // ── ServiceEntity: leaf ──────────────────────────────────────────────────
 
     protected boolean _isLeaf(ServiceEntity entity) {
-        return entity.getProjectedElements().isEmpty();
+        return entity.getEntityBody() == null
+            || entity.getEntityBody().getProjectedElements().isEmpty();
     }
 
     // ── ExtendDef: leaf ──────────────────────────────────────────────────────

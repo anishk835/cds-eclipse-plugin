@@ -170,8 +170,11 @@ public class CDSHoverProvider extends DefaultEObjectHoverProvider {
     }
 
     private String buildServiceEntityHover(ServiceEntity se) {
-        String sourceName = (se.getSource() != null && !se.getSource().eIsProxy())
-            ? se.getSource().getName() : "?";
+        String sourceName = "?";
+        if (se.getEntityBody() != null && se.getEntityBody().getSource() != null
+                && !se.getEntityBody().getSource().eIsProxy()) {
+            sourceName = se.getEntityBody().getSource().getName();
+        }
         return "<b>entity</b> " + se.getName()
             + " <i>as projection on</i> " + sourceName;
     }

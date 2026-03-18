@@ -41,7 +41,13 @@
       <genFeatures createChild="false" ecoreFeature="ecore:EAttribute CDS.ecore#//NamespaceDecl/name"/>
     </genClasses>
     <genClasses ecoreClass="CDS.ecore#//UsingDecl">
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference CDS.ecore#//UsingDecl/imports"/>
       <genFeatures createChild="false" ecoreFeature="ecore:EAttribute CDS.ecore#//UsingDecl/importedNamespace"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute CDS.ecore#//UsingDecl/fromPath"/>
+    </genClasses>
+    <genClasses ecoreClass="CDS.ecore#//NamespaceImport">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute CDS.ecore#//NamespaceImport/namespace"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute CDS.ecore#//NamespaceImport/alias"/>
     </genClasses>
     <genClasses ecoreClass="CDS.ecore#//Definition"/>
     <genClasses ecoreClass="CDS.ecore#//EntityDef">
@@ -67,8 +73,11 @@
       <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference CDS.ecore#//SelectQuery/union"/>
     </genClasses>
     <genClasses ecoreClass="CDS.ecore#//SelectColumn">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute CDS.ecore#//SelectColumn/key"/>
       <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference CDS.ecore#//SelectColumn/expression"/>
       <genFeatures createChild="false" ecoreFeature="ecore:EAttribute CDS.ecore#//SelectColumn/alias"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute CDS.ecore#//SelectColumn/redirected"/>
+      <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference CDS.ecore#//SelectColumn/redirectTarget"/>
     </genClasses>
     <genClasses ecoreClass="CDS.ecore#//ExcludingClause">
       <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference CDS.ecore#//ExcludingClause/fields"/>
@@ -131,11 +140,21 @@
     <genClasses ecoreClass="CDS.ecore#//ServiceEntity">
       <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference CDS.ecore#//ServiceEntity/annotations"/>
       <genFeatures createChild="false" ecoreFeature="ecore:EAttribute CDS.ecore#//ServiceEntity/name"/>
-      <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference CDS.ecore#//ServiceEntity/source"/>
-      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference CDS.ecore#//ServiceEntity/projectedElements"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference CDS.ecore#//ServiceEntity/entityBody"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference CDS.ecore#//ServiceEntity/query"/>
+    </genClasses>
+    <genClasses ecoreClass="CDS.ecore#//ServiceEntityBody">
+      <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference CDS.ecore#//ServiceEntityBody/source"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference CDS.ecore#//ServiceEntityBody/projectedElements"/>
     </genClasses>
     <genClasses ecoreClass="CDS.ecore#//ProjectedElement">
       <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference CDS.ecore#//ProjectedElement/ref"/>
+      <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference CDS.ecore#//ProjectedElement/selectField"/>
+    </genClasses>
+    <genClasses ecoreClass="CDS.ecore#//SelectField">
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute CDS.ecore#//SelectField/name"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute CDS.ecore#//SelectField/redirected"/>
+      <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference CDS.ecore#//SelectField/target"/>
     </genClasses>
     <genClasses ecoreClass="CDS.ecore#//ActionDef">
       <genFeatures property="None" children="true" createChild="true" ecoreFeature="ecore:EReference CDS.ecore#//ActionDef/annotations"/>

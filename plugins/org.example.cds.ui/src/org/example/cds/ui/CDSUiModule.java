@@ -4,6 +4,7 @@
 package org.example.cds.ui;
 
 import org.eclipse.ui.plugin.AbstractUIPlugin;
+import org.example.cds.ui.search.CDSReferenceFinder;
 
 /**
  * Use this class to register components to be used within the Eclipse IDE.
@@ -12,5 +13,12 @@ public class CDSUiModule extends AbstractCDSUiModule {
 
 	public CDSUiModule(AbstractUIPlugin plugin) {
 		super(plugin);
+	}
+
+	/**
+	 * Bind the CDS reference finder for Find References functionality.
+	 */
+	public Class<? extends CDSReferenceFinder> bindCDSReferenceFinder() {
+		return CDSReferenceFinder.class;
 	}
 }

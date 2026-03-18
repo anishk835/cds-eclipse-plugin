@@ -85,8 +85,11 @@ public class CDSLabelProvider extends DefaultEObjectLabelProvider {
     }
 
     public String text(ServiceEntity se) {
-        String source = (se.getSource() != null && !se.getSource().eIsProxy())
-            ? se.getSource().getName() : "?";
+        String source = "?";
+        if (se.getEntityBody() != null && se.getEntityBody().getSource() != null
+                && !se.getEntityBody().getSource().eIsProxy()) {
+            source = se.getEntityBody().getSource().getName();
+        }
         return se.getName() + " → " + source;
     }
 
