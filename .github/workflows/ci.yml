@@ -47,12 +47,13 @@ jobs:
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action@v2
         if: always()
+        continue-on-error: true
         with:
           files: '**/surefire-reports/*.xml'
 
       - name: Upload P2 Update Site
         uses: actions/upload-artifact@v4
-        if: success()
+        if: success() || failure()
         with:
           name: cds-editor-p2-site
           path: releng/org.example.cds.p2/target/repository/
