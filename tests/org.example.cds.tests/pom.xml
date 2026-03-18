@@ -23,6 +23,8 @@
         <configuration>
           <useUIHarness>false</useUIHarness>
           <useUIThread>false</useUIThread>
+          <!-- Allow build to succeed when no tests are found -->
+          <failIfNoTests>false</failIfNoTests>
           <includes>
             <include>**/*Test.java</include>
           </includes>

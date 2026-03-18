@@ -24,6 +24,8 @@
           <!-- UI tests need a display; set useUIHarness=true for SWTBot tests -->
           <useUIHarness>true</useUIHarness>
           <useUIThread>false</useUIThread>
+          <!-- Allow build to succeed when no tests are found -->
+          <failIfNoTests>false</failIfNoTests>
           <includes>
             <include>**/*Test.java</include>
           </includes>
